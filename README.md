@@ -1,4 +1,4 @@
-# luminAI 
+# ExMachina 
 
 Adventures with my Waveshare JetBot controlled by: NVIDIA DGX Spark - NemoTron, NemoClaw, Mac Studio
 
