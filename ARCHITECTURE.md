@@ -10,6 +10,7 @@ wherever possible. A 120B parameter model serves as the cognitive core, an agent
 framework orchestrates tasks across the infrastructure, RAG grounds the model in local
 knowledge, and a physical robot acts as an edge agent in the real world.
 
+<pre>
 ┌─────────────────────────────────────┐
 │           OpenClaw (agent)          │  ← the "brain" / agentic loop
 ├─────────────────────────────────────┤
@@ -20,6 +21,7 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 │    vLLM + nemotron-super:120b       │  ← inference
 │         DGX Spark (hardware)        │
 └─────────────────────────────────────┘
+</pre>
 
 ---
 
