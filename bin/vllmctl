@@ -18,7 +18,7 @@ declare -A VLLM_MODELS
 VLLM_MODELS=(
   ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
-  ["llama-3.3-70b"]="meta-llama/Llama-3.3-70B-Instruct"
+  ["llama-3.3-70b"]="neuralmagic/Meta-Llama-3.3-70B-Instruct-FP8"
   ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
 )
 
@@ -44,7 +44,7 @@ declare -A MODEL_SERVE_ARGS
 MODEL_SERVE_ARGS=(
   ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
   ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
-  ["llama-3.3-70b"]="--quantization fp8 --max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
+  ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["llama-3.1-8b"]="--max-model-len 131072 --enable-auto-tool-choice --tool-call-parser llama3_json"
 )
 
