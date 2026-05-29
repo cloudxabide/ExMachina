@@ -46,12 +46,13 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  start   Select a model and start the vLLM server (+ optional litellm proxy)
-  stop    Stop the vLLM server (and litellm proxy if running)
-  status  Show running state and API health
-  list    List models loaded in the running server
-  logs    Tail vLLM container logs
-  update  Pull the latest vLLM image and restart
+  start        Select a model and start the vLLM server (+ optional litellm proxy)
+  stop         Stop the vLLM server (and litellm proxy if running)
+  status       Show running state and API health
+  list         List models loaded in the running server
+  logs         Tail vLLM container logs
+  update       Pull the latest vLLM image and restart
+  self-update  Pull the latest version of this script from git
 EOF
   exit 1
 }
@@ -297,6 +298,41 @@ do_logs() {
   docker logs -f "$CONTAINER_NAME"
 }
 
+do_self_update() {
+  local script_path
+  script_path=$(readlink -f "$0")
+  local repo_root
+  repo_root=$(git -C "$(dirname "$script_path")" rev-parse --show-toplevel 2>/dev/null || true)
+
+  if [[ -z "$repo_root" ]]; then
+    echo "Error: $script_path is not inside a git repository." >&2
+    exit 1
+  fi
+
+  echo "Repo: $repo_root"
+  local before
+  before=$(git -C "$repo_root" rev-parse HEAD)
+
+  git -C "$repo_root" pull --ff-only
+
+  local after
+  after=$(git -C "$repo_root" rev-parse HEAD)
+
+  if [[ "$before" == "$after" ]]; then
+    echo "Already up to date."
+    return
+  fi
+
+  echo ""
+  echo "Updated ${before:0:7}..${after:0:7}"
+  git -C "$repo_root" log --oneline "${before}..${after}"
+
+  if git -C "$repo_root" diff --name-only "${before}..${after}" | grep -q "$(basename "$script_path")"; then
+    echo ""
+    echo "$(basename "$0") was updated — changes are live."
+  fi
+}
+
 do_update() {
   echo "Pulling latest image: $VLLM_IMAGE ..."
   docker pull "$VLLM_IMAGE"
@@ -313,18 +349,17 @@ do_update() {
 
 # ── main ─────────────────────────────────────────────────────────────────────
 
-require_docker
-
 cmd="${1:-}"
 [[ -z "$cmd" ]] && usage
 
 case "$cmd" in
-  start)  do_start ;;
-  stop)   do_stop ;;
-  status) do_status ;;
-  list)   do_list ;;
-  logs)   do_logs ;;
-  update) do_update ;;
+  start)        require_docker; do_start ;;
+  stop)         require_docker; do_stop ;;
+  status)       require_docker; do_status ;;
+  list)         require_docker; do_list ;;
+  logs)         require_docker; do_logs ;;
+  update)       require_docker; do_update ;;
+  self-update)  do_self_update ;;
   *)
     echo "Error: Unknown command '$cmd'" >&2
     usage
