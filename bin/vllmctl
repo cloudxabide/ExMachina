@@ -1,0 +1,332 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# References:
+# https://build.nvidia.com/spark/vllm
+# https://build.nvidia.com/spark/vllm/instructions
+
+CONTAINER_NAME="${VLLM_CONTAINER_NAME:-vllm-spark}"
+VLLM_IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.03.post1-py3}"
+VLLM_PORT="${VLLM_PORT:-8000}"
+HF_CACHE="${HOME}/.cache/huggingface"
+LITELLM_CONTAINER_NAME="${CONTAINER_NAME}-litellm"
+
+# Available models: short-name -> HuggingFace model ID
+declare -A VLLM_MODELS
+VLLM_MODELS=(
+  ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+  ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+  ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
+)
+
+# Stable display order
+MODEL_KEYS=(
+  "nemotron-super-120b"
+  "nemotron-nano-30b"
+  "llama-3.1-8b"
+)
+
+# Per-model environment variable overrides (space-separated -e K=V strings)
+declare -A MODEL_EXTRA_ENVS
+MODEL_EXTRA_ENVS=(
+  ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm -e VLLM_USE_FLASHINFER_MOE_FP4=0"
+  ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
+  ["llama-3.1-8b"]=""
+)
+
+# Per-model vllm serve flags appended after the model name
+declare -A MODEL_SERVE_ARGS
+MODEL_SERVE_ARGS=(
+  ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
+  ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
+  ["llama-3.1-8b"]="--max-model-len 131072"
+)
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <command>
+
+Commands:
+  start   Select a model and start the vLLM server (+ optional litellm proxy)
+  stop    Stop the vLLM server (and litellm proxy if running)
+  status  Show running state and API health
+  list    List models loaded in the running server
+  logs    Tail vLLM container logs
+  update  Pull the latest vLLM image and restart
+EOF
+  exit 1
+}
+
+require_docker() {
+  if ! docker info >/dev/null 2>&1; then
+    echo "Error: Docker daemon not reachable." >&2
+    exit 1
+  fi
+}
+
+require_hf_token() {
+  if [[ -z "${HF_TOKEN:-}" ]]; then
+    echo "Error: HF_TOKEN is not set. Export it before running this script." >&2
+    exit 1
+  fi
+}
+
+select_model() {
+  echo "Available vLLM models:"
+  PS3="Select a model (enter number): "
+  select CHOICE in "${MODEL_KEYS[@]}" "Quit"; do
+    if [[ "$CHOICE" == "Quit" ]]; then
+      echo "Exiting."
+      exit 0
+    elif [[ -n "${VLLM_MODELS[$CHOICE]+_}" ]]; then
+      HF_MODEL_ID="${VLLM_MODELS[$CHOICE]}"
+      EXTRA_ENVS="${MODEL_EXTRA_ENVS[$CHOICE]}"
+      SERVE_ARGS="${MODEL_SERVE_ARGS[$CHOICE]}"
+      echo "Selected: $CHOICE -> $HF_MODEL_ID"
+      break
+    else
+      echo "Invalid selection, try again."
+    fi
+  done
+}
+
+start_litellm_proxy() {
+  local model_id="$1"
+  local primary_ip
+  primary_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {print $7; exit}' || echo "0.0.0.0")
+
+  LITELLM_CONFIG_DIR=$(mktemp -d)
+  cat > "$LITELLM_CONFIG_DIR/config.yaml" <<EOF
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: "openai/${model_id}"
+      api_base: "http://localhost:${VLLM_PORT}/v1"
+      api_key: "dummy"
+EOF
+
+  if docker inspect "$LITELLM_CONTAINER_NAME" >/dev/null 2>&1; then
+    local old="${LITELLM_CONTAINER_NAME}-$(date +%Y%m%d-%H%M%S)"
+    echo "Existing litellm container found — renaming to '$old' and stopping..."
+    docker rename "$LITELLM_CONTAINER_NAME" "$old"
+    docker stop "$old" >/dev/null 2>&1 || true
+  fi
+
+  echo "Starting litellm proxy on ${primary_ip}:4000 -> http://localhost:${VLLM_PORT}/v1 ..."
+  docker run -d --rm \
+    --name="$LITELLM_CONTAINER_NAME" \
+    --network=host \
+    -e OPENAI_API_KEY=dummy \
+    -v "$LITELLM_CONFIG_DIR/config.yaml:/app/config.yaml:ro" \
+    ghcr.io/berriai/litellm:main-latest \
+    --config /app/config.yaml \
+    --port 4000 \
+    --host "$primary_ip" >/dev/null
+
+  echo "Waiting for litellm to become ready..."
+  local ready=false
+  for i in $(seq 1 30); do
+    if curl -sf "http://${primary_ip}:4000/health" >/dev/null 2>&1; then
+      ready=true; break
+    fi
+    sleep 2
+  done
+
+  if [[ "$ready" == false ]]; then
+    echo "ERROR: litellm did not start within 60 seconds. Check: docker logs $LITELLM_CONTAINER_NAME" >&2
+    docker stop "$LITELLM_CONTAINER_NAME" 2>/dev/null || true
+    exit 1
+  fi
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  litellm proxy ready. Configure your tools:"
+  echo ""
+  echo "  OpenCode / OpenAI-compatible:"
+  echo "    export OPENAI_BASE_URL=http://${primary_ip}:4000/v1"
+  echo "    export OPENAI_API_KEY=dummy"
+  echo ""
+  echo "  Claude Code:"
+  echo "    export ANTHROPIC_BASE_URL=http://${primary_ip}:4000"
+  echo "    export ANTHROPIC_API_KEY=dummy"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo ""
+}
+
+watch_startup() {
+  local start
+  start=$(date +%s)
+
+  echo ""
+  echo "━━━ Startup progress (full logs: $(basename "$0") logs) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+  # Tail filtered log lines in the background.
+  # Strip ANSI codes so tqdm progress bars print cleanly.
+  docker logs -f "$CONTAINER_NAME" 2>&1 \
+    | sed 's/\x1b\[[0-9;]*[mGKH]//g' \
+    | grep --line-buffered -E \
+        'Downloading|Loading weights|safetensors checkpoint|CUDA graph|warmup|Uvicorn running|Application startup complete|ERROR|Exception|Traceback' \
+    | while IFS= read -r line; do
+        elapsed=$(( $(date +%s) - start ))
+        printf "  [%4ds] %s\n" "$elapsed" "$line"
+      done &
+  local log_pid=$!
+
+  local ready=false
+  local i=0
+  while (( i < 120 )); do
+    if curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+      ready=true
+      break
+    fi
+    sleep 5
+    i=$(( i + 1 ))
+    # Heartbeat every 60s so it doesn't look hung between log milestones
+    if (( i % 12 == 0 )); then
+      elapsed=$(( $(date +%s) - start ))
+      printf "  [%4ds] (still loading — run '%s logs' in another terminal for full output)\n" \
+        "$elapsed" "$(basename "$0")"
+    fi
+  done
+
+  kill "$log_pid" 2>/dev/null || true
+  wait "$log_pid" 2>/dev/null || true
+
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  if [[ "$ready" == true ]]; then
+    elapsed=$(( $(date +%s) - start ))
+    echo "vLLM is ready. (startup took ${elapsed}s)"
+  else
+    elapsed=$(( $(date +%s) - start ))
+    echo "WARNING: API did not respond after ${elapsed}s. Model may still be loading."
+    echo "  Monitor with: $(basename "$0") logs"
+  fi
+}
+
+do_start() {
+  require_hf_token
+  select_model
+
+  if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    local old="${CONTAINER_NAME}-$(date +%Y%m%d-%H%M%S)"
+    echo "Existing container '$CONTAINER_NAME' found — renaming to '$old' and stopping..."
+    docker rename "$CONTAINER_NAME" "$old"
+    docker stop "$old" >/dev/null 2>&1 || true
+  fi
+
+  mkdir -p "$HF_CACHE"
+
+  read -rp "Start litellm proxy for Claude Code / OpenCode access (port 4000)? [y/N]: " PROXY_CHOICE
+  START_PROXY=false
+  [[ "$PROXY_CHOICE" =~ ^[Yy]$ ]] && START_PROXY=true
+
+  echo "Starting vLLM: $HF_MODEL_ID on port $VLLM_PORT ..."
+  # shellcheck disable=SC2086
+  docker run -d \
+    --name="$CONTAINER_NAME" \
+    --gpus all \
+    --ipc=host \
+    --network=host \
+    -e HF_TOKEN="$HF_TOKEN" \
+    $EXTRA_ENVS \
+    -v "$HF_CACHE:/root/.cache/huggingface" \
+    "$VLLM_IMAGE" \
+    vllm serve "$HF_MODEL_ID" \
+      --host 0.0.0.0 \
+      --port "$VLLM_PORT" \
+      $SERVE_ARGS
+
+  watch_startup
+
+  [[ "$START_PROXY" == true ]] && start_litellm_proxy "$HF_MODEL_ID"
+}
+
+do_stop() {
+  local stopped_any=false
+
+  for name in "$CONTAINER_NAME" "$LITELLM_CONTAINER_NAME"; do
+    if [ -n "$(docker ps -q --filter "name=^${name}$" --filter "status=running")" ]; then
+      echo "Stopping ${name}..."
+      docker stop "${name}" >/dev/null
+      stopped_any=true
+    fi
+  done
+
+  [[ "$stopped_any" == false ]] && echo "No running vLLM containers found."
+}
+
+do_status() {
+  echo "Container status:"
+  for name in "$CONTAINER_NAME" "$LITELLM_CONTAINER_NAME"; do
+    if [ -n "$(docker ps -q --filter "name=^${name}$" --filter "status=running")" ]; then
+      printf "  %-30s running\n" "$name"
+    elif [ -n "$(docker ps -aq --filter "name=^${name}$")" ]; then
+      printf "  %-30s stopped\n" "$name"
+    else
+      printf "  %-30s not found\n" "$name"
+    fi
+  done
+
+  echo ""
+  echo "API health (port $VLLM_PORT):"
+  if curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+    echo "  http://localhost:${VLLM_PORT}  healthy"
+  else
+    echo "  http://localhost:${VLLM_PORT}  unreachable"
+  fi
+}
+
+do_list() {
+  if ! curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+    echo "Error: vLLM API not reachable on port $VLLM_PORT." >&2
+    exit 1
+  fi
+  echo "Models served at http://localhost:${VLLM_PORT}/v1/models:"
+  curl -s "http://localhost:${VLLM_PORT}/v1/models" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+for m in data.get('data', []):
+    print('  ' + m['id'])
+"
+}
+
+do_logs() {
+  if ! docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+    echo "Error: Container '$CONTAINER_NAME' not found." >&2
+    exit 1
+  fi
+  docker logs -f "$CONTAINER_NAME"
+}
+
+do_update() {
+  echo "Pulling latest image: $VLLM_IMAGE ..."
+  docker pull "$VLLM_IMAGE"
+
+  if [ -n "$(docker ps -q --filter "name=^${CONTAINER_NAME}$" --filter "status=running")" ]; then
+    echo "Stopping $CONTAINER_NAME for update..."
+    docker stop "$CONTAINER_NAME" >/dev/null
+    docker rm "$CONTAINER_NAME" >/dev/null
+    echo "Image updated. Run '$(basename "$0") start' to restart with the new image."
+  else
+    echo "Image updated. No running container to restart."
+  fi
+}
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+require_docker
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && usage
+
+case "$cmd" in
+  start)  do_start ;;
+  stop)   do_stop ;;
+  status) do_status ;;
+  list)   do_list ;;
+  logs)   do_logs ;;
+  update) do_update ;;
+  *)
+    echo "Error: Unknown command '$cmd'" >&2
+    usage
+    ;;
+esac
