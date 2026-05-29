@@ -46,13 +46,15 @@ usage() {
 Usage: $(basename "$0") <command>
 
 Commands:
-  start        Select a model and start the vLLM server (+ optional litellm proxy)
-  stop         Stop the vLLM server (and litellm proxy if running)
-  status       Show running state and API health
-  list         List models loaded in the running server
-  logs         Tail vLLM container logs
-  update       Pull the latest vLLM image and restart
-  self-update  Pull the latest version of this script from git
+  start          Select a model and start the vLLM server (+ optional litellm proxy)
+  stop           Stop the vLLM server (and litellm proxy if running)
+  status         Show running state and API health
+  list           List models loaded in the running server
+  logs           Tail vLLM container logs
+  update         Pull the latest vLLM image and restart
+  self-update    Pull the latest version of this script from git
+  proxy start    Start the litellm proxy against the running vLLM server
+  proxy stop     Stop the litellm proxy
 EOF
   exit 1
 }
@@ -88,6 +90,32 @@ select_model() {
       echo "Invalid selection, try again."
     fi
   done
+}
+
+do_proxy_start() {
+  if ! curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+    echo "Error: vLLM is not running on port ${VLLM_PORT}. Start it first with: $(basename "$0") start" >&2
+    exit 1
+  fi
+  local model_id
+  model_id=$(curl -s "http://localhost:${VLLM_PORT}/v1/models" \
+    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d[0]['id']) if d else sys.exit(1)" 2>/dev/null)
+  if [[ -z "$model_id" ]]; then
+    echo "Error: could not determine loaded model from vLLM API." >&2
+    exit 1
+  fi
+  echo "Detected model: $model_id"
+  start_litellm_proxy "$model_id"
+}
+
+do_proxy_stop() {
+  if [ -n "$(docker ps -q --filter "name=^${LITELLM_CONTAINER_NAME}$" --filter "status=running")" ]; then
+    echo "Stopping ${LITELLM_CONTAINER_NAME}..."
+    docker stop "${LITELLM_CONTAINER_NAME}" >/dev/null
+    echo "Stopped."
+  else
+    echo "litellm proxy is not running."
+  fi
 }
 
 start_litellm_proxy() {
@@ -360,6 +388,14 @@ case "$cmd" in
   logs)         require_docker; do_logs ;;
   update)       require_docker; do_update ;;
   self-update)  do_self_update ;;
+  proxy)
+    subcmd="${2:-}"
+    case "$subcmd" in
+      start) require_docker; do_proxy_start ;;
+      stop)  require_docker; do_proxy_stop ;;
+      *) echo "Error: usage: $(basename "$0") proxy <start|stop>" >&2; exit 1 ;;
+    esac
+    ;;
   *)
     echo "Error: Unknown command '$cmd'" >&2
     usage
