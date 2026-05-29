@@ -28,7 +28,7 @@ MODEL_KEYS=(
 # Per-model environment variable overrides (space-separated -e K=V strings)
 declare -A MODEL_EXTRA_ENVS
 MODEL_EXTRA_ENVS=(
-  ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm -e VLLM_USE_FLASHINFER_MOE_FP4=0"
+  ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_USE_FLASHINFER_MOE_FP4=0"
   ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
   ["llama-3.1-8b"]=""
 )
