@@ -18,7 +18,7 @@ declare -A VLLM_MODELS
 VLLM_MODELS=(
   ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
-  ["llama-3.3-70b"]="neuralmagic/Meta-Llama-3.3-70B-Instruct-FP8"
+  ["llama-3.3-70b"]="unsloth/Llama-3.3-70B-Instruct-FP8-Dynamic"
   ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
 )
 
