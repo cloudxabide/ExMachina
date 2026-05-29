@@ -5,6 +5,7 @@ set -euo pipefail
 # https://build.nvidia.com/spark/vllm/instructions
 
 SCRIPT_RAW_URL="https://raw.githubusercontent.com/cloudxabide/ExMachina/main/bin/vllmctl"
+SCRIPT_SHA256_URL="https://raw.githubusercontent.com/cloudxabide/ExMachina/main/bin/vllmctl.sha256"
 
 CONTAINER_NAME="${VLLM_CONTAINER_NAME:-vllm-spark}"
 VLLM_IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.03.post1-py3}"
@@ -355,16 +356,28 @@ do_self_update() {
   else
     # Standalone deployment — fetch directly from GitHub
     echo "Fetching latest $(basename "$0") from GitHub..."
-    local tmp
+    local tmp tmp_sum
     tmp=$(mktemp)
+    tmp_sum=$(mktemp)
     if ! curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp"; then
       echo "Error: download failed from $SCRIPT_RAW_URL" >&2
-      rm -f "$tmp"
-      exit 1
+      rm -f "$tmp" "$tmp_sum"; exit 1
+    fi
+    if ! curl -fsSL "$SCRIPT_SHA256_URL" -o "$tmp_sum"; then
+      echo "Error: checksum download failed from $SCRIPT_SHA256_URL" >&2
+      rm -f "$tmp" "$tmp_sum"; exit 1
+    fi
+    local expected actual
+    expected=$(tr -d '[:space:]' < "$tmp_sum")
+    actual=$(sha256sum "$tmp" | awk '{print $1}')
+    if [[ "$expected" != "$actual" ]]; then
+      echo "Error: checksum mismatch (expected $expected, got $actual)" >&2
+      rm -f "$tmp" "$tmp_sum"; exit 1
     fi
     chmod +x "$tmp"
-    cp "$tmp" "$script_path" && rm -f "$tmp"
-    echo "$(basename "$0") updated."
+    cp "$tmp" "$script_path"
+    rm -f "$tmp" "$tmp_sum"
+    echo "$(basename "$0") updated (checksum verified)."
   fi
 }
 
