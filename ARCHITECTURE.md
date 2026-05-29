@@ -41,13 +41,14 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 | Layer | Component | Status |
 |-------|-----------|--------|
 | Inference | vLLM (NVFP4 nightly cu130) + nemotron-super:120b | Planned |
-| Agent Runtime | NemoClaw (OpenClaw + OpenShell) | Evaluating — early preview |
+| Agent Runtime | NemoClaw (OpenClaw + OpenShell) | Locked — early preview |
 | Orchestration | Harvester (Kubernetes-based HCI) | Planned |
-| Agentic Framework | TBD | Open decision |
-| RAG | TBD (vector DB + chunking strategy TBD) | Open decision |
-| Identity & Auth | FreeIPA | Existing |
+| Agentic Framework | OpenClaw (NemoClaw suite) | Locked |
+| RAG — Vector DB | Qdrant (K8s workload on Harvester) | Locked |
+| RAG — Corpus | Live cluster state + curated docs + Jetbot sensor data | Locked |
+| Identity & Auth | Authentik (OIDC/OAuth2) on RKE2/Longhorn | Locked |
 | Web UI | OpenWebUI (likely) | Planned |
-| Network/Perimeter | Sophos firewall | Existing |
+| Network/Perimeter | Sophos XGS88 | Existing |
 
 
 ---
@@ -72,10 +73,11 @@ All components must be runnable entirely behind the firewall. External dependenc
 (pip packages, container images, model weights) are acceptable at setup time but
 the running system must not require internet access.
 
-### FreeIPA for Identity
-No ad-hoc auth. All services authenticate against FreeIPA. This applies to the
-web UI, any APIs exposed internally, and eventually the agentic framework's
-tool invocations.
+### Identity Provider: Authentik
+**Date:** 2026-05-28 — Authentik replaces FreeIPA as the identity provider.
+No ad-hoc auth. All services authenticate against Authentik via OIDC/OAuth2. This applies to the
+web UI, any APIs exposed internally, and the agentic framework's tool invocations.
+See detailed rationale in Key Architectural Decisions below.
 
 ### Jetbot as Physical Agent
 The Jetbot is not a demo peripheral — it is a first-class agent endpoint. The
@@ -86,16 +88,14 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 
 ## Open Decisions
 
-- **Agentic framework**: Candidates include LangChain, CrewAI, AutoGen, LlamaIndex
-  agent workflows, or a lightweight custom tool-use loop. Key criteria: air-gap
-  capable, Harvester-hostable, supports FreeIPA auth, can dispatch to Jetbot.
+- **Jetbot integration pattern**: Deferred until DGX Spark + OpenClaw stack is
+  operational. ROS2 on Jetson Nano (JetPack 4.6 / Ubuntu 18.04) is Tier 3 /
+  build-from-source; direct Python + MQTT is the likely path. Revisit once inference
+  layer is running — or if hardware is upgraded to Jetson Orin Nano / Xavier NX.
 
-- **RAG stack**: Vector DB choice (pgvector, Qdrant, Chroma, Milvus), chunking
-  strategy, and what corpus gets indexed (infrastructure docs, runbooks, live
-  cluster state, external references).
+- **Web UI**: OpenWebUI is the likely choice but not yet locked.
 
-- **Jetbot integration pattern**: ROS2 vs direct Python control. What triggers
-  dispatch — agentic framework task, web UI command, or autonomous sensor response?
+- **MLOps scope**: Only relevant if fine-tuning enters scope; skip if inference-only.
 
 ---
 
@@ -105,27 +105,8 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 - Air-gap capable by default; cloud-optional at most
 - Document decisions here as they are made — this file is the source of truth
 - Prefer integration over invention; don't build what exists
-# Architecture
 
-| Layer | Component | Status |
-|-------|-----------|--------|
-| Inference | vLLM (NVFP4 nightly cu130) + nemotron-super:120b | Planned |
-| Agent Runtime | NemoClaw (OpenClaw + OpenShell) | Evaluating — early preview |
-| Orchestration | Harvester (Kubernetes-based HCI) | Planned |
-| Agentic Framework | TBD | Open decision |
-| RAG | TBD (vector DB + chunking strategy TBD) | Open decision |
-| Identity & Auth | FreeIPA | Existing |
-| Web UI | OpenWebUI (likely) | Planned |
-| Network/Perimeter | Sophos firewall | Existing |
-
-## Architectural Decisions
-
-### NemoClaw as Agent Runtime
-NemoClaw (OpenClaw + NVIDIA OpenShell) provides the sandboxed agent execution layer
-on the DGX Spark. OpenShell enforces out-of-process policy — security, network, and
-privacy guardrails sit outside the agent, so even a compromised agent can't bypass
-them. This aligns well with the air-gap-first design goal.
-Note: NemoClaw is in early preview (March 2026) — APIs may change.
+---
 
 ### Identity Provider: Authentik (over FreeIPA / Keycloak)
 **Date:** 2026-05-28
@@ -139,3 +120,34 @@ Note: NemoClaw is in early preview (March 2026) — APIs may change.
 - Authentik is container-native, actively developed, and covers the protocols this stack actually needs (OIDC for OpenWebUI, agentic framework, vLLM API, Jetbot callback auth)
 
 **Scope:** All stack services authenticate against Authentik — no per-service local user stores, no ad-hoc API key schemes.
+
+---
+
+### RAG: Qdrant as Vector Store
+**Date:** 2026-05-29
+**Decision:** Use Qdrant as the vector database for the RAG layer.
+**Deployment:** Kubernetes workload on Harvester (Helm chart, Longhorn for persistence).
+
+**Rationale:**
+- Purpose-built vector DB — better filtering, payload indexing, and performance than pgvector at scale
+- Rust-based, low memory overhead, self-hostable K8s workload
+- Active development; good Python client that integrates cleanly with LlamaIndex/OpenClaw
+
+**Corpus (locked):**
+1. Live cluster state — Harvester metrics, RKE2 workload status, Longhorn health, NeuVector alerts (continuously ingested)
+2. Curated docs / runbooks — operational runbooks, architecture docs, stack vendor docs
+3. Jetbot sensor data — structured observations from the Jetbot (camera descriptions, sensor readings) as episodic memory
+
+---
+
+### Agentic Framework: OpenClaw (NemoClaw suite)
+**Date:** 2026-05-29
+**Decision:** OpenClaw is the agentic loop / "brain" of the stack.
+**Deployment:** Runs on DGX Spark alongside vLLM; OpenShell provides the out-of-process policy layer.
+
+**Rationale:**
+- Already selected as the Agent Runtime — OpenClaw IS the agentic framework in the NemoClaw architecture
+- OpenShell enforces guardrails outside the agent process — aligned with air-gap-first and sovereignty goals
+- Tight integration with vLLM and nemotron-super on the same hardware
+
+**Risk:** NemoClaw is in early preview (March 2026) — APIs may change. Monitor upstream.
