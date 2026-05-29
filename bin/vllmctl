@@ -39,9 +39,9 @@ MODEL_EXTRA_ENVS=(
 # Per-model vllm serve flags appended after the model name
 declare -A MODEL_SERVE_ARGS
 MODEL_SERVE_ARGS=(
-  ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code --enable-auto-tool-choice --tool-call-parser hermes"
-  ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85 --enable-auto-tool-choice --tool-call-parser hermes"
-  ["llama-3.1-8b"]="--max-model-len 131072"
+  ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
+  ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
+  ["llama-3.1-8b"]="--max-model-len 131072 --enable-auto-tool-choice --tool-call-parser llama3_json"
 )
 
 usage() {
