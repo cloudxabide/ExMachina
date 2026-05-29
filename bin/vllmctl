@@ -4,6 +4,8 @@ set -euo pipefail
 # https://build.nvidia.com/spark/vllm
 # https://build.nvidia.com/spark/vllm/instructions
 
+SCRIPT_RAW_URL="https://raw.githubusercontent.com/cloudxabide/ExMachina/main/bin/vllmctl"
+
 CONTAINER_NAME="${VLLM_CONTAINER_NAME:-vllm-spark}"
 VLLM_IMAGE="${VLLM_IMAGE:-nvcr.io/nvidia/vllm:26.03.post1-py3}"
 VLLM_PORT="${VLLM_PORT:-8000}"
@@ -332,32 +334,37 @@ do_self_update() {
   local repo_root
   repo_root=$(git -C "$(dirname "$script_path")" rev-parse --show-toplevel 2>/dev/null || true)
 
-  if [[ -z "$repo_root" ]]; then
-    echo "Error: $script_path is not inside a git repository." >&2
-    exit 1
-  fi
-
-  echo "Repo: $repo_root"
-  local before
-  before=$(git -C "$repo_root" rev-parse HEAD)
-
-  git -C "$repo_root" pull --ff-only
-
-  local after
-  after=$(git -C "$repo_root" rev-parse HEAD)
-
-  if [[ "$before" == "$after" ]]; then
-    echo "Already up to date."
-    return
-  fi
-
-  echo ""
-  echo "Updated ${before:0:7}..${after:0:7}"
-  git -C "$repo_root" log --oneline "${before}..${after}"
-
-  if git -C "$repo_root" diff --name-only "${before}..${after}" | grep -q "$(basename "$script_path")"; then
+  if [[ -n "$repo_root" ]]; then
+    # Inside a clone — pull the repo
+    echo "Repo: $repo_root"
+    local before after
+    before=$(git -C "$repo_root" rev-parse HEAD)
+    git -C "$repo_root" pull --ff-only
+    after=$(git -C "$repo_root" rev-parse HEAD)
+    if [[ "$before" == "$after" ]]; then
+      echo "Already up to date."
+      return
+    fi
     echo ""
-    echo "$(basename "$0") was updated — changes are live."
+    echo "Updated ${before:0:7}..${after:0:7}"
+    git -C "$repo_root" log --oneline "${before}..${after}"
+    if git -C "$repo_root" diff --name-only "${before}..${after}" | grep -q "$(basename "$script_path")"; then
+      echo ""
+      echo "$(basename "$0") was updated — changes are live."
+    fi
+  else
+    # Standalone deployment — fetch directly from GitHub
+    echo "Fetching latest $(basename "$0") from GitHub..."
+    local tmp
+    tmp=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp"; then
+      echo "Error: download failed from $SCRIPT_RAW_URL" >&2
+      rm -f "$tmp"
+      exit 1
+    fi
+    chmod +x "$tmp"
+    cp "$tmp" "$script_path" && rm -f "$tmp"
+    echo "$(basename "$0") updated."
   fi
 }
 
