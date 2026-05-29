@@ -18,7 +18,7 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 ├─────────────────────────────────────┤
 │        NemoClaw (glue layer)        │  ← onboarding, lifecycle, blueprint mgmt
 ├─────────────────────────────────────┤
-│    vLLM + nemotron-super:120b       │  ← inference
+│  vLLM + nemotron-3-super120b:a12b   │  ← inference (MoE: 120B total / 12B active)
 │         DGX Spark (hardware)        │
 └─────────────────────────────────────┘
 </pre>
@@ -27,12 +27,12 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 
 ## Hardware
 
-| Component | Specs | Role |
-|-----------|-------|------|
-| NVIDIA DGX Spark | GB10 SoC, 128GB unified memory | Primary inference engine |
-| NUC Gen13 (x3) | 64GB RAM each | Harvester cluster nodes |
-| Dell XPS 9520 | — | Secondary/development inference |
-| Waveshare Jetbot | Jetson Nano | Physical edge agent |
+| Component | Hostname | IP | Specs | Role |
+|-----------|----------|----|-------|------|
+| NVIDIA DGX Spark | spark-e.homelab.kubernerdes.com | 10.10.12.251 | GB10 SoC, 128GB unified memory | Primary inference engine |
+| NUC Gen13 (x3) | — | — | 64GB RAM each | Harvester cluster nodes |
+| Dell XPS 9520 | wheatley.homelab.kubernerdes.com | 10.10.12.252 | — | Secondary/dev node (openSUSE Tumbleweed) |
+| Waveshare Jetbot | — | — | Jetson Nano | Physical edge agent (deferred) |
 
 
 ---
@@ -40,7 +40,8 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 ## Software Stack
 | Layer | Component | Status |
 |-------|-----------|--------|
-| Inference | vLLM (NVFP4 nightly cu130) + nemotron-super:120b | Planned |
+| Inference | vLLM + nemotron-3-super120b:a12b (120B total / 12B active MoE) | **Running** on spark-e |
+| Inference proxy | LiteLLM on port 40000 (OpenAI-compatible API) | **Running** on spark-e |
 | Agent Runtime | NemoClaw (OpenClaw + OpenShell) | Locked — early preview |
 | Orchestration | Harvester (Kubernetes-based HCI) | Planned |
 | Agentic Framework | OpenClaw (NemoClaw suite) | Locked |
