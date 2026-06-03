@@ -48,9 +48,22 @@ MODEL_SERVE_ARGS=(
   ["llama-3.1-8b"]="--max-model-len 131072 --enable-auto-tool-choice --tool-call-parser llama3_json"
 )
 
+DRY_RUN=false
+
+# Print the command (to stderr) instead of running it when DRY_RUN=true.
+run_cmd() {
+  if [[ "$DRY_RUN" == true ]]; then
+    printf '[dry-run]' >&2
+    printf ' %q' "$@" >&2
+    printf '\n' >&2
+    return 0
+  fi
+  "$@"
+}
+
 usage() {
   cat <<EOF
-Usage: $(basename "$0") <command>
+Usage: $(basename "$0") [--dry-run|-n] <command>
 
 Commands:
   start          Select a model and start the vLLM server (+ optional litellm proxy)
@@ -62,6 +75,9 @@ Commands:
   self-update    Pull the latest version of this script from git
   proxy start    Start the litellm proxy against the running vLLM server
   proxy stop     Stop the litellm proxy
+
+Options:
+  --dry-run, -n  Print commands that would run without executing them
 EOF
   exit 1
 }
@@ -100,26 +116,31 @@ select_model() {
 }
 
 do_proxy_start() {
-  if ! curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
-    echo "Error: vLLM is not running on port ${VLLM_PORT}. Start it first with: $(basename "$0") start" >&2
-    exit 1
-  fi
   local model_id
-  model_id=$(curl -s "http://localhost:${VLLM_PORT}/v1/models" \
-    | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d[0]['id']) if d else sys.exit(1)" 2>/dev/null)
-  if [[ -z "$model_id" ]]; then
-    echo "Error: could not determine loaded model from vLLM API." >&2
-    exit 1
+  if [[ "$DRY_RUN" == true ]]; then
+    model_id="<model-id-from-running-vllm>"
+    echo "Note: model ID would be detected from the running vLLM API at port ${VLLM_PORT}" >&2
+  else
+    if ! curl -sf "http://localhost:${VLLM_PORT}/health" >/dev/null 2>&1; then
+      echo "Error: vLLM is not running on port ${VLLM_PORT}. Start it first with: $(basename "$0") start" >&2
+      exit 1
+    fi
+    model_id=$(curl -s "http://localhost:${VLLM_PORT}/v1/models" \
+      | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(d[0]['id']) if d else sys.exit(1)" 2>/dev/null)
+    if [[ -z "$model_id" ]]; then
+      echo "Error: could not determine loaded model from vLLM API." >&2
+      exit 1
+    fi
+    echo "Detected model: $model_id"
   fi
-  echo "Detected model: $model_id"
   start_litellm_proxy "$model_id"
 }
 
 do_proxy_stop() {
   if [ -n "$(docker ps -q --filter "name=^${LITELLM_CONTAINER_NAME}$" --filter "status=running")" ]; then
     echo "Stopping ${LITELLM_CONTAINER_NAME}..."
-    docker stop "${LITELLM_CONTAINER_NAME}" >/dev/null
-    echo "Stopped."
+    run_cmd docker stop "${LITELLM_CONTAINER_NAME}"
+    [[ "$DRY_RUN" == false ]] && echo "Stopped."
   else
     echo "litellm proxy is not running."
   fi
@@ -130,8 +151,16 @@ start_litellm_proxy() {
   local primary_ip
   primary_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '/src/ {print $7; exit}' || echo "0.0.0.0")
 
-  LITELLM_CONFIG_DIR=$(mktemp -d)
-  cat > "$LITELLM_CONFIG_DIR/config.yaml" <<EOF
+  local config_path
+  if [[ "$DRY_RUN" == true ]]; then
+    config_path="/tmp/litellm-config-XXXXXX/config.yaml"
+    printf '[dry-run] would write litellm config:\n  model_list:\n  - model_name: "*"\n    litellm_params:\n      model: "openai/%s"\n      api_base: "http://localhost:%s/v1"\n      api_key: "dummy"\n' \
+      "$model_id" "$VLLM_PORT" >&2
+  else
+    local config_dir
+    config_dir=$(mktemp -d)
+    config_path="$config_dir/config.yaml"
+    cat > "$config_path" <<EOF
 model_list:
   - model_name: "*"
     litellm_params:
@@ -139,24 +168,30 @@ model_list:
       api_base: "http://localhost:${VLLM_PORT}/v1"
       api_key: "dummy"
 EOF
+  fi
 
   if docker inspect "$LITELLM_CONTAINER_NAME" >/dev/null 2>&1; then
     local old="${LITELLM_CONTAINER_NAME}-$(date +%Y%m%d-%H%M%S)"
     echo "Existing litellm container found — renaming to '$old' and stopping..."
-    docker rename "$LITELLM_CONTAINER_NAME" "$old"
-    docker stop "$old" >/dev/null 2>&1 || true
+    run_cmd docker rename "$LITELLM_CONTAINER_NAME" "$old"
+    run_cmd docker stop "$old" || true
   fi
 
   echo "Starting litellm proxy on ${primary_ip}:4000 -> http://localhost:${VLLM_PORT}/v1 ..."
-  docker run -d --rm \
-    --name="$LITELLM_CONTAINER_NAME" \
-    --network=host \
-    -e OPENAI_API_KEY=dummy \
-    -v "$LITELLM_CONFIG_DIR/config.yaml:/app/config.yaml:ro" \
-    ghcr.io/berriai/litellm:main-latest \
-    --config /app/config.yaml \
-    --port 4000 \
-    --host "$primary_ip" >/dev/null
+  local litellm_cmd=(
+    docker run -d --rm
+    --name="$LITELLM_CONTAINER_NAME"
+    --network=host
+    -e OPENAI_API_KEY=dummy
+    -v "$config_path:/app/config.yaml:ro"
+    ghcr.io/berriai/litellm:main-latest
+    --config /app/config.yaml
+    --port 4000
+    --host "$primary_ip"
+  )
+  run_cmd "${litellm_cmd[@]}"
+
+  [[ "$DRY_RUN" == true ]] && return
 
   echo "Waiting for litellm to become ready..."
   local ready=false
@@ -245,33 +280,43 @@ do_start() {
   if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
     local old="${CONTAINER_NAME}-$(date +%Y%m%d-%H%M%S)"
     echo "Existing container '$CONTAINER_NAME' found — renaming to '$old' and stopping..."
-    docker rename "$CONTAINER_NAME" "$old"
-    docker stop "$old" >/dev/null 2>&1 || true
+    run_cmd docker rename "$CONTAINER_NAME" "$old"
+    run_cmd docker stop "$old" || true
   fi
 
-  mkdir -p "$HF_CACHE"
+  run_cmd mkdir -p "$HF_CACHE"
 
   read -rp "Start litellm proxy for Claude Code / OpenCode access (port 4000)? [y/N]: " PROXY_CHOICE
   START_PROXY=false
   [[ "$PROXY_CHOICE" =~ ^[Yy]$ ]] && START_PROXY=true
 
   echo "Starting vLLM: $HF_MODEL_ID on port $VLLM_PORT ..."
-  # shellcheck disable=SC2086
-  docker run -d \
-    --name="$CONTAINER_NAME" \
-    --gpus all \
-    --ipc=host \
-    --network=host \
-    -e HF_TOKEN="$HF_TOKEN" \
-    $EXTRA_ENVS \
-    -v "$HF_CACHE:/root/.cache/huggingface" \
-    "$VLLM_IMAGE" \
-    vllm serve "$HF_MODEL_ID" \
-      --host 0.0.0.0 \
-      --port "$VLLM_PORT" \
-      $SERVE_ARGS
+  local vllm_cmd=(
+    docker run -d
+    --name="$CONTAINER_NAME"
+    --gpus all
+    --ipc=host
+    --network=host
+    -e "HF_TOKEN=$HF_TOKEN"
+  )
+  if [[ -n "$EXTRA_ENVS" ]]; then
+    read -ra _extra_envs <<< "$EXTRA_ENVS"
+    vllm_cmd+=("${_extra_envs[@]}")
+  fi
+  vllm_cmd+=(
+    -v "$HF_CACHE:/root/.cache/huggingface"
+    "$VLLM_IMAGE"
+    vllm serve "$HF_MODEL_ID"
+    --host 0.0.0.0
+    --port "$VLLM_PORT"
+  )
+  if [[ -n "$SERVE_ARGS" ]]; then
+    read -ra _serve_args <<< "$SERVE_ARGS"
+    vllm_cmd+=("${_serve_args[@]}")
+  fi
+  run_cmd "${vllm_cmd[@]}"
 
-  watch_startup
+  [[ "$DRY_RUN" == false ]] && watch_startup
 
   [[ "$START_PROXY" == true ]] && start_litellm_proxy "$HF_MODEL_ID"
 }
@@ -282,7 +327,7 @@ do_stop() {
   for name in "$CONTAINER_NAME" "$LITELLM_CONTAINER_NAME"; do
     if [ -n "$(docker ps -q --filter "name=^${name}$" --filter "status=running")" ]; then
       echo "Stopping ${name}..."
-      docker stop "${name}" >/dev/null
+      run_cmd docker stop "${name}"
       stopped_any=true
     fi
   done
@@ -342,6 +387,10 @@ do_self_update() {
   if [[ -n "$repo_root" ]]; then
     # Inside a clone — pull the repo
     echo "Repo: $repo_root"
+    if [[ "$DRY_RUN" == true ]]; then
+      run_cmd git -C "$repo_root" pull --ff-only
+      return
+    fi
     local before after
     before=$(git -C "$repo_root" rev-parse HEAD)
     git -C "$repo_root" pull --ff-only
@@ -359,6 +408,13 @@ do_self_update() {
     fi
   else
     # Standalone deployment — fetch directly from GitHub
+    if [[ "$DRY_RUN" == true ]]; then
+      printf '[dry-run] curl -fsSL %q -o <tmp>\n' "$SCRIPT_RAW_URL" >&2
+      printf '[dry-run] curl -fsSL %q -o <tmp.sha256>\n' "$SCRIPT_SHA256_URL" >&2
+      printf '[dry-run] sha256sum verify\n' >&2
+      printf '[dry-run] cp <tmp> %q\n' "$script_path" >&2
+      return
+    fi
     echo "Fetching latest $(basename "$0") from GitHub..."
     local tmp tmp_sum
     tmp=$(mktemp)
@@ -387,12 +443,12 @@ do_self_update() {
 
 do_update() {
   echo "Pulling latest image: $VLLM_IMAGE ..."
-  docker pull "$VLLM_IMAGE"
+  run_cmd docker pull "$VLLM_IMAGE"
 
   if [ -n "$(docker ps -q --filter "name=^${CONTAINER_NAME}$" --filter "status=running")" ]; then
     echo "Stopping $CONTAINER_NAME for update..."
-    docker stop "$CONTAINER_NAME" >/dev/null
-    docker rm "$CONTAINER_NAME" >/dev/null
+    run_cmd docker stop "$CONTAINER_NAME"
+    run_cmd docker rm "$CONTAINER_NAME"
     echo "Image updated. Run '$(basename "$0") start' to restart with the new image."
   else
     echo "Image updated. No running container to restart."
@@ -400,6 +456,17 @@ do_update() {
 }
 
 # ── main ─────────────────────────────────────────────────────────────────────
+
+# Strip --dry-run / -n from args before dispatch
+_args=()
+for _arg in "$@"; do
+  case "$_arg" in
+    --dry-run|-n) DRY_RUN=true ;;
+    *) _args+=("$_arg") ;;
+  esac
+done
+set -- "${_args[@]+"${_args[@]}"}"
+unset _arg _args
 
 cmd="${1:-}"
 [[ -z "$cmd" ]] && usage

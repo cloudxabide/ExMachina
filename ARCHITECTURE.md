@@ -30,9 +30,9 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 | Component | Hostname | IP | Specs | Role |
 |-----------|----------|----|-------|------|
 | NVIDIA DGX Spark | spark-e.homelab.kubernerdes.com | 10.10.12.251 | GB10 SoC, 128GB unified memory | Primary inference engine |
-| NUC Gen13 (x3) | — | — | 64GB RAM each | Harvester cluster nodes |
+| NUC Gen13 (x3) | nuc-0[1-3] | 10.10.12.10[1-3] | 64GB RAM each | Harvester cluster nodes |
 | Dell XPS 9520 | wheatley.homelab.kubernerdes.com | 10.10.12.252 | — | Secondary/dev node (openSUSE Tumbleweed) |
-| Waveshare Jetbot | wall-e.homelab.kubernerdes.com | 10.10.12.248 | Jetson Nano | Physical edge agent (deferred) |
+| Waveshare Jetbot | wall-e.homelab.kubernerdes.com | 10.10.12.248 | Jetson Nano | Physical edge device (deferred) |
 
 
 ---

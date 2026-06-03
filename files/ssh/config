@@ -1,0 +1,39 @@
+Host spark-e spark-e.homelab.kubernerdes.com
+    HostName 10.10.12.251
+    User mansible
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host wheatley wheatley.homelab.kubernerdes.com
+    HostName 10.10.12.252
+    User mansible
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host wall-e wall-e.homelab.kubernerdes.com
+    HostName 10.10.12.248
+    User jetbot
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host nuc-00 nuc-00.homelab.kubernerdes.com
+    HostName 10.10.12.10
+    User mansible
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host nuc-01 nuc-01.homelab.kubernerdes.com
+    HostName 10.10.12.101
+    User rancher
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host nuc-02 nuc-02.homelab.kubernerdes.com
+    HostName 10.10.12.102
+    User rancher
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host nuc-03 nuc-03.homelab.kubernerdes.com
+    HostName 10.10.12.103
+    User rancher
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host *.homelab.kubernerdes.com
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
