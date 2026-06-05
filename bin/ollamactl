@@ -16,7 +16,8 @@ Commands:
   stop         Stop the container
   status       Show running state of the container
   list         List available Ollama models
-  update       Pull the latest image and restart the container
+  update         Pull the latest image and restart the container
+  update-models  Pull the latest version of each installed Ollama model
   self-update  Pull the latest version of this script from git
 EOF
   exit 1
@@ -82,6 +83,41 @@ do_list() {
     exit 1
   fi
   docker exec "${NAME}" ollama list
+}
+
+do_update_models() {
+  if [ -z "$(docker ps -q --filter "name=^${NAME}$" --filter "status=running")" ]; then
+    echo "Container ${NAME} is not running — starting it..."
+    do_start
+  fi
+
+  echo "Waiting for Ollama to be ready..."
+  local timeout=60 elapsed=0
+  until curl -sf http://localhost:11434 >/dev/null 2>&1; do
+    if (( elapsed >= timeout )); then
+      echo "Error: Ollama did not become ready after ${timeout}s." >&2
+      exit 1
+    fi
+    sleep 2
+    (( elapsed += 2 ))
+  done
+  echo "Ollama is ready."
+
+  local models
+  models=$(docker exec "${NAME}" ollama list | awk 'NR>1 {print $1}')
+  if [ -z "$models" ]; then
+    echo "No models installed — nothing to update."
+    return
+  fi
+
+  while IFS= read -r model; do
+    echo ""
+    echo "Pulling ${model}..."
+    docker exec "${NAME}" ollama pull "${model}"
+  done <<< "$models"
+
+  echo ""
+  echo "All models updated."
 }
 
 do_update() {
@@ -170,7 +206,8 @@ case "$cmd" in
   stop)         require_docker; do_stop ;;
   status)       require_docker; do_status ;;
   list)         require_docker; do_list ;;
-  update)       require_docker; do_update ;;
+  update)         require_docker; do_update ;;
+  update-models)  require_docker; do_update_models ;;
   self-update)  do_self_update ;;
   *)
     echo "Error: Unknown command '${cmd}'" >&2

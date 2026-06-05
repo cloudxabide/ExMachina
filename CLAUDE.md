@@ -19,6 +19,21 @@ The Jetbot is the **protagonist**, not an afterthought — it does perception (c
 | Waveshare Jetbot (Jetson Nano) | Physical edge agent — perception + action |
 | Sophos XGS88 | Perimeter — all traffic stays inside |
 
+## Node Inventory
+Domain: `homelab.kubernerdes.com` | SSH key: `~/.ssh/id_ecdsa-kubernerdes`
+
+| Hostname | IP | User | Role |
+|----------|----|------|------|
+| nuc-00 | 10.10.12.10 | mansible | Harvester hub |
+| nuc-01 | 10.10.12.101 | rancher | Harvester worker |
+| nuc-02 | 10.10.12.102 | rancher | Harvester worker |
+| nuc-03 | 10.10.12.103 | rancher | Harvester worker |
+| spark-e | 10.10.12.251 | mansible | DGX Spark — vLLM + LiteLLM |
+| wheatley | 10.10.12.252 | mansible | Dell XPS 9520 (openSUSE Tumbleweed) |
+| wall-e | 10.10.12.248 | jetbot | Waveshare Jetbot (JetPack 4.6) |
+
+SSH config artifact: `files/ssh/config`
+
 ## Software Stack
 | Component | Role |
 |-----------|------|
@@ -41,10 +56,11 @@ The Jetbot is the **protagonist**, not an afterthought — it does perception (c
 - MLOps scope — only worthwhile if fine-tuning is in scope; skip if inference-only
 
 ## Project Phase
-Currently in **planning/architecture** — no code exists yet. `Planning.md` contains the design discussion. `ARCHITECTURE.md` is the target for decisions as they are made.
+**Planning/architecture + early artifacts.** `Planning.md` contains the design discussion. `ARCHITECTURE.md` is the target for decisions as they are made. `files/` holds deployment artifacts (SSH config, etc.) built ahead of deployment.
 
 ## Conventions
 - Record decisions in `ARCHITECTURE.md` as they are made, not after
 - Prefer open source, self-hostable components
 - Assume air-gap deployment unless explicitly noted otherwise
 - Claude Code and Claude Desktop chat have no shared state — keep decisions in this repo
+- Config/artifacts go in `files/` for later deployment — never written directly to the local system
