@@ -28,7 +28,7 @@ Domain: `homelab.kubernerdes.com` | SSH key: `~/.ssh/id_ecdsa-kubernerdes`
 | nuc-01 | 10.10.12.101 | rancher | Harvester worker |
 | nuc-02 | 10.10.12.102 | rancher | Harvester worker |
 | nuc-03 | 10.10.12.103 | rancher | Harvester worker |
-| spark-e | 10.10.12.251 | mansible | DGX Spark — vLLM + LiteLLM |
+| spark-e | 10.10.12.251 | jradtke | DGX Spark — vLLM + LiteLLM |
 | wheatley | 10.10.12.252 | mansible | Dell XPS 9520 (openSUSE Tumbleweed) |
 | wall-e | 10.10.12.248 | jetbot | Waveshare Jetbot (JetPack 4.6) |
 
