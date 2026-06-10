@@ -40,7 +40,9 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 ## Software Stack
 | Layer | Component | Status |
 |-------|-----------|--------|
-| Inference | vLLM + nemotron-3-super120b:a12b (120B total / 12B active MoE) | **Running** on spark-e |
+| Inference (primary) | vLLM — nemotron-3-super120b:a12b (120B total / 12B active MoE) | **Running** on spark-e |
+| Inference (optimized) | TensorRT-LLM — compiled engines for latency-sensitive tasks | Planned on spark-e |
+| Inference (fallback) | Ollama — lighter models, dev/prototyping, low-overhead tasks | Available on spark-e |
 | Inference proxy | LiteLLM on port 40000 (OpenAI-compatible API) | **Running** on spark-e |
 | Agent Runtime | NemoClaw (OpenClaw + OpenShell) | Locked — early preview |
 | Orchestration | Harvester (Kubernetes-based HCI) | Planned |
@@ -56,11 +58,20 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 
 ## Key Architectural Decisions
 
-### Inference: vLLM over Ollama
-NIM is not viable on the DGX Spark due to its UMA (unified memory architecture) —
-NIM requires discrete GPU/CPU memory separation. vLLM with the NVFP4 nightly cu130
-build is the correct path for serving nemotron-super:120b at this weight class.
-Ollama is convenient but not optimized for 120B inference.
+### Inference: vLLM + TensorRT-LLM, with Ollama as fallback
+**Date:** 2026-06-10
+
+The inference tier uses multiple backends, selected by task profile:
+
+| Backend | When to use |
+|---------|-------------|
+| **vLLM** | Primary path — nemotron-super 120B, high-throughput/batched workloads, agentic loop requests. NVFP4 nightly cu130 build. |
+| **TensorRT-LLM** | Latency-sensitive tasks where compiled engine optimization is worth the build overhead — lower per-token latency at the cost of up-front compilation time. |
+| **Ollama** | Fallback for lighter models, quick prototyping, or tasks where simplicity and low overhead matter more than throughput. Not suitable for 120B inference. |
+
+LiteLLM on port 40000 routes requests to the appropriate backend — callers use the same OpenAI-compatible API regardless of which backend serves the request.
+
+**NIM status:** Still not viable on DGX Spark — NIM requires discrete GPU/CPU memory separation, which conflicts with the GB10's UMA architecture.
 
 ### NemoClaw as Agent Runtime
 NemoClaw (OpenClaw + NVIDIA OpenShell) provides the sandboxed agent execution layer
