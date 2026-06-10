@@ -7,7 +7,7 @@ I am actually really stoked to be working on this homelab project.  It utilizes 
 Adventures with physicalAI and Edge utilizing:
 * Waveshare JetBot (Jetson Nano)
 * NemoClaw (running on a workstation)
-* NVIDIA DGX Spark  (providing Inference)
+* NVIDIA DGX Spark  (providing Inference via vLLM)
 * NemoTron (model of choice at the moment)
 
 Eventually I would like to run NemoClaw in Kubernetes on my Harvester cluster.
