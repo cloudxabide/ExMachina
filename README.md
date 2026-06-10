@@ -2,12 +2,12 @@
 
 "A sovereign, air-gap-capable agentic AI platform with physical edge presence"
 
-I am actually really stoked to be working on this homelab project.  It utilizes a number of things that are cool by themselves, but way cooler together
+I am actually really stoked to be working on this homelab project.  It utilizes a number of things that are cool by themselves, but way cooler together.
 
 Adventures with physicalAI and Edge utilizing:
 * Waveshare JetBot (Jetson Nano)
 * NemoClaw (running on a workstation)
-* NVIDIA DGX Spark  (providing Inference via vLLM)
+* NVIDIA DGX Spark  (providing Inference)
 * NemoTron (model of choice at the moment)
 
 Eventually I would like to run NemoClaw in Kubernetes on my Harvester cluster.
