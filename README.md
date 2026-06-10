@@ -4,9 +4,13 @@
 
 I am actually really stoked to be working on this homelab project.  It utilizes a number of things that are cool by themselves, but way cooler together
 
-Adventures with my Waveshare JetBot controlled by: NVIDIA DGX Spark - NemoTron, NemoClaw, Mac Studio
+Adventures with physicalAI and Edge utilizing:
+* Waveshare JetBot (Jetson Nano)
+* NemoClaw (running on a workstation)
+* NVIDIA DGX Spark  (providing Inference)
+* NemoTron (model of choice at the moment)
 
-The Mac Studio is substituted by my old Dell 9520 for now - and may remain that way.  I prefer Linux over MacOS for this kind of stuff.
+Eventually I would like to run NemoClaw in Kubernetes on my Harvester cluster.
 
 ![Wizarding, indeed](Images/Wizarding-MacStudio-DGX-Jetbot.jpeg)
 
