@@ -1,0 +1,88 @@
+#!/bin/bash
+
+# Status: Working - Work in Progress
+#   Goal: I am trying to have an "easy button" for deploying different models using different engines on my DGX 
+
+# https://github.com/NVIDIA-NeMo/Nemotron/tree/main/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide
+
+do_vllm() {
+wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4/raw/main/super_v3_reasoning_parser.py
+
+docker run --rm -it --gpus all \
+  -e VLLM_NVFP4_GEMM_BACKEND=marlin \
+  -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+  -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
+  -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
+  -e HF_TOKEN=$HF_TOKEN \
+  -v ~/.cache/huggingface:/root/.cache/huggingface \
+  -v $(pwd)/super_v3_reasoning_parser.py:/app/super_v3_reasoning_parser.py \
+  -p 8000:8000 \
+  vllm/vllm-openai:cu130-nightly \
+    --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+    --served-model-name nemotron-3-super \
+    --host 0.0.0.0 \
+    --port 8000 \
+    --async-scheduling \
+    --dtype auto \
+    --kv-cache-dtype fp8 \
+    --tensor-parallel-size 1 \
+    --pipeline-parallel-size 1 \
+    --data-parallel-size 1 \
+    --trust-remote-code \
+    --gpu-memory-utilization 0.90 \
+    --enable-chunked-prefill \
+    --max-num-seqs 4 \
+    --max-model-len 1000000 \
+    --moe-backend marlin \
+    --mamba_ssm_cache_dtype float32 \
+    --quantization fp4 \
+    --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
+    --reasoning-parser-plugin /app/super_v3_reasoning_parser.py \
+    --reasoning-parser super_v3 \
+    --enable-auto-tool-choice \
+    --tool-call-parser qwen3_coder
+}
+
+do_tensorrt-llm() {
+# Pull Image
+docker pull nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc9
+
+# Create LLM API Config
+cat << EOF | tee extra-llm-api-config.yml
+kv_cache_config:
+  dtype: fp8
+  enable_block_reuse: false
+  free_gpu_memory_fraction: 0.9
+  mamba_ssm_cache_dtype: float16
+  mamba_ssm_stochastic_rounding: true
+  mamba_ssm_philox_rounds: 5
+moe_config:
+   backend: CUTLASS
+cuda_graph_config:
+    enable_padding: true
+    max_batch_size: 8
+enable_attention_dp: false
+enable_chunked_prefill: true
+stream_interval: 1
+print_iter_log: true
+speculative_config:
+  decoding_type: MTP
+  num_nextn_predict_layers: 3
+  allow_advanced_sampling: true
+EOF
+
+# Serve Model
+TLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+trtllm-serve <nvfp4_ckpt> \
+  --host 0.0.0.0 \
+  --port 8123 \
+  --max_batch_size 8 \
+  --tp_size 1 --ep_size 1 \
+  --max_num_tokens 8192 \
+  --trust_remote_code \
+  --reasoning_parser nano-v3 \
+  --tool_parser qwen3_coder \
+  --extra_llm_api_options extra-llm-api-config.yml \
+  --max_seq_len 1048576
+
+}
