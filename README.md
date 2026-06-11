@@ -89,7 +89,7 @@ Eight NemoClaw agents run the platform. Each has a defined role, a set of respon
 | **RAG Curator** | Manages Qdrant corpus — ingestion, chunking, freshness, retrieval quality |
 | **Edge Agent** | Runs wall-e's perception loop; formats sensor observations; dispatches OpenClaw actions |
 
-Full role definitions: [`MyClaws.md`](MyClaws.md)
+Full role definitions: [`Agent_Roster.md`](Agent_Roster.md)
 
 ---
 
@@ -100,6 +100,7 @@ Full role definitions: [`MyClaws.md`](MyClaws.md)
 - **Agentic over chat** — goal-directed loops with tools, not a chat wrapper
 - **Sovereignty** — no cloud egress assumed; no vendor lock-in tolerated
 - **Decisions in the repo** — [`ARCHITECTURE.md`](ARCHITECTURE.md) is the source of truth
+- **Zero trust by default** — every agent and service proves identity; see [`Security.md`](Security.md)
 
 ---
 

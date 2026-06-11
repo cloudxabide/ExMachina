@@ -120,6 +120,16 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 
 ---
 
+## Related Documents
+
+| Document | Purpose |
+|----------|---------|
+| [`Agent_Roster.md`](Agent_Roster.md) | NemoClaw crew definitions — roles, responsibilities, artifact ownership |
+| [`Security.md`](Security.md) | Zero-trust security architecture — threat model, controls, open decisions |
+| [`CLAUDE.md`](CLAUDE.md) | Node inventory, hardware stack, project conventions |
+
+---
+
 ### Identity Provider: Authentik (over FreeIPA / Keycloak)
 **Date:** 2026-05-28
 **Decision:** Use Authentik as the identity provider for the entire stack.
