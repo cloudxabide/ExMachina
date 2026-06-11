@@ -1,8 +1,10 @@
 #!/bin/bash
 
-# Status: Working - Work in Progress
-#   Goal: Easy button for deploying different models using different engines on DGX Spark
-# https://github.com/NVIDIA-NeMo/Nemotron/tree/main/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide
+#    Status: vLLM  | Working | Still a Work in Progress
+#            TensorRT | Untested | Need to test
+# 
+#      Goal: Easy button for deploying different models using different engines on DGX Spark
+# Reference: https://github.com/NVIDIA-NeMo/Nemotron/tree/main/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide
 
 set -euo pipefail
 
