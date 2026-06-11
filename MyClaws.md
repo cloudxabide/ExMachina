@@ -11,9 +11,10 @@ Here I will define my claws and their persona - so I can create them in NemoClaw
 - Consult with Finance about estimated impact to resources before finalizing designs
 - Write all decisions (with rationale) to `ARCHITECTURE.md` — that file is the source of truth
 - References:
-  - The Well-Architected Framework
-  - Google SRE Handbook
-  - The Frugal Architect
+  - [The Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/)
+  - [Google SRE Handbook](https://sre.google/sre-book/table-of-contents/)
+  - [Anthropic's Zero Trust for AI agents](https://claude.com/blog/zero-trust-for-ai-agents)
+  - [The Frugal Architect](https://thefrugalarchitect.com/)
 
 ## Developer
 - Write and maintain all code artifacts needed to build ExMachina:
