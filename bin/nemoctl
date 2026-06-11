@@ -1,54 +1,96 @@
 #!/bin/bash
 
 # Status: Working - Work in Progress
-#   Goal: I am trying to have an "easy button" for deploying different models using different engines on my DGX 
-
+#   Goal: Easy button for deploying different models using different engines on DGX Spark
 # https://github.com/NVIDIA-NeMo/Nemotron/tree/main/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide
 
-do_vllm() {
-wget https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4/raw/main/super_v3_reasoning_parser.py
+set -euo pipefail
 
-docker run --rm -it --gpus all \
-  -e VLLM_NVFP4_GEMM_BACKEND=marlin \
-  -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-  -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
-  -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
-  -e HF_TOKEN=$HF_TOKEN \
-  -v ~/.cache/huggingface:/root/.cache/huggingface \
-  -v $(pwd)/super_v3_reasoning_parser.py:/app/super_v3_reasoning_parser.py \
-  -p 8000:8000 \
-  vllm/vllm-openai:cu130-nightly \
-    --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
-    --served-model-name nemotron-3-super \
-    --host 0.0.0.0 \
-    --port 8000 \
-    --async-scheduling \
-    --dtype auto \
-    --kv-cache-dtype fp8 \
-    --tensor-parallel-size 1 \
-    --pipeline-parallel-size 1 \
-    --data-parallel-size 1 \
-    --trust-remote-code \
-    --gpu-memory-utilization 0.90 \
-    --enable-chunked-prefill \
-    --max-num-seqs 4 \
-    --max-model-len 1000000 \
-    --moe-backend marlin \
-    --mamba_ssm_cache_dtype float32 \
-    --quantization fp4 \
-    --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
-    --reasoning-parser-plugin /app/super_v3_reasoning_parser.py \
-    --reasoning-parser super_v3 \
-    --enable-auto-tool-choice \
-    --tool-call-parser qwen3_coder
+SCRIPT_NAME=$(basename "$0")
+ENGINE=""
+CHECKPOINT=""
+
+REASONING_PARSER_URL="https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4/raw/main/super_v3_reasoning_parser.py"
+REASONING_PARSER_FILE="super_v3_reasoning_parser.py"
+
+usage() {
+  cat <<EOF
+Usage: $SCRIPT_NAME --engine <vllm|tensorrt> [options]
+
+Options:
+  -e, --engine <vllm|tensorrt>    Inference engine to use (required)
+  -c, --checkpoint <path>         Path to NVFP4 model checkpoint (required for tensorrt)
+  -h, --help                      Show this help message
+
+Examples:
+  $SCRIPT_NAME --engine vllm
+  $SCRIPT_NAME --engine tensorrt --checkpoint /path/to/nvfp4_ckpt
+EOF
 }
 
-do_tensorrt-llm() {
-# Pull Image
-docker pull nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc9
+do_vllm() {
+  if [[ -z "${HF_TOKEN:-}" ]]; then
+    echo "ERROR: HF_TOKEN is not set — required for vLLM model pull" >&2
+    exit 1
+  fi
 
-# Create LLM API Config
-cat << EOF | tee extra-llm-api-config.yml
+  # Only download the reasoning parser if not already present
+  if [[ ! -f "$REASONING_PARSER_FILE" ]]; then
+    echo "Downloading reasoning parser..."
+    wget -q "$REASONING_PARSER_URL"
+  fi
+
+  docker run --rm -it --gpus all \
+    -e VLLM_NVFP4_GEMM_BACKEND=marlin \
+    -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+    -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
+    -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
+    -e HF_TOKEN="$HF_TOKEN" \
+    -v ~/.cache/huggingface:/root/.cache/huggingface \
+    -v "$(pwd)/$REASONING_PARSER_FILE:/app/$REASONING_PARSER_FILE" \
+    -p 8000:8000 \
+    vllm/vllm-openai:cu130-nightly \
+      --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+      --served-model-name nemotron-3-super \
+      --host 0.0.0.0 \
+      --port 8000 \
+      --async-scheduling \
+      --dtype auto \
+      --kv-cache-dtype fp8 \
+      --tensor-parallel-size 1 \
+      --pipeline-parallel-size 1 \
+      --data-parallel-size 1 \
+      --trust-remote-code \
+      --gpu-memory-utilization 0.90 \
+      --enable-chunked-prefill \
+      --max-num-seqs 4 \
+      --max-model-len 1000000 \
+      --moe-backend marlin \
+      --mamba_ssm_cache_dtype float32 \
+      --quantization fp4 \
+      --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
+      --reasoning-parser-plugin "/app/$REASONING_PARSER_FILE" \
+      --reasoning-parser super_v3 \
+      --enable-auto-tool-choice \
+      --tool-call-parser qwen3_coder
+}
+
+do_tensorrt() {
+  if [[ -z "$CHECKPOINT" ]]; then
+    echo "ERROR: --checkpoint is required for tensorrt engine" >&2
+    usage >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$CHECKPOINT" ]]; then
+    echo "ERROR: checkpoint path not found: $CHECKPOINT" >&2
+    exit 1
+  fi
+
+  docker pull nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc9
+
+  local config_file="extra-llm-api-config.yml"
+  cat > "$config_file" <<EOF
 kv_cache_config:
   dtype: fp8
   enable_block_reuse: false
@@ -71,18 +113,55 @@ speculative_config:
   allow_advanced_sampling: true
 EOF
 
-# Serve Model
-TLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-trtllm-serve <nvfp4_ckpt> \
-  --host 0.0.0.0 \
-  --port 8123 \
-  --max_batch_size 8 \
-  --tp_size 1 --ep_size 1 \
-  --max_num_tokens 8192 \
-  --trust_remote_code \
-  --reasoning_parser nano-v3 \
-  --tool_parser qwen3_coder \
-  --extra_llm_api_options extra-llm-api-config.yml \
-  --max_seq_len 1048576
-
+  TLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
+  trtllm-serve "$CHECKPOINT" \
+    --host 0.0.0.0 \
+    --port 8123 \
+    --max_batch_size 8 \
+    --tp_size 1 --ep_size 1 \
+    --max_num_tokens 8192 \
+    --trust_remote_code \
+    --reasoning_parser nano-v3 \
+    --tool_parser qwen3_coder \
+    --extra_llm_api_options "$config_file" \
+    --max_seq_len 1048576
 }
+
+# --- Argument parsing ---
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -e|--engine)
+      ENGINE="${2:-}"
+      shift 2
+      ;;
+    -c|--checkpoint)
+      CHECKPOINT="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "ERROR: unknown option: $1" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -z "$ENGINE" ]]; then
+  echo "ERROR: --engine is required" >&2
+  usage >&2
+  exit 1
+fi
+
+case "$ENGINE" in
+  vllm)     do_vllm ;;
+  tensorrt) do_tensorrt ;;
+  *)
+    echo "ERROR: unknown engine '$ENGINE' — expected: vllm, tensorrt" >&2
+    exit 1
+    ;;
+esac
