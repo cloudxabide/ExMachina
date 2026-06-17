@@ -20,6 +20,7 @@ VLLM_MODELS=(
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
   ["llama-3.3-70b"]="unsloth/Llama-3.3-70B-Instruct-FP8-Dynamic"
   ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
+  ["gemma-4-26b"]="google/gemma-4-26B-A4B-it"
 )
 
 # Stable display order
@@ -28,6 +29,7 @@ MODEL_KEYS=(
   "nemotron-nano-30b"
   "llama-3.3-70b"
   "llama-3.1-8b"
+  "gemma-4-26b"
 )
 
 # Per-model environment variable overrides (space-separated -e K=V strings)
@@ -37,6 +39,7 @@ MODEL_EXTRA_ENVS=(
   ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
   ["llama-3.3-70b"]=""
   ["llama-3.1-8b"]=""
+  ["gemma-4-26b"]=""
 )
 
 # Per-model vllm serve flags appended after the model name
@@ -46,6 +49,7 @@ MODEL_SERVE_ARGS=(
   ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
   ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["llama-3.1-8b"]="--max-model-len 131072 --enable-auto-tool-choice --tool-call-parser llama3_json"
+  ["gemma-4-26b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --limit-mm-per-prompt {\"image\":150,\"video\":1,\"audio\":0} --enable-prefix-caching"
 )
 
 DRY_RUN=false
