@@ -13,23 +13,56 @@ VLLM_PORT="${VLLM_PORT:-8000}"
 HF_CACHE="${HOME}/.cache/huggingface"
 LITELLM_CONTAINER_NAME="${CONTAINER_NAME}-litellm"
 
+# GPU profile thresholds (VRAM in MB):
+#   small  — ≤6 GB   (e.g. RTX 3050 4 GB  — wheatley)
+#   medium — ≤20 GB  (e.g. RTX 4060 Ti 16 GB — jarvis)
+#   large  — >20 GB  (e.g. DGX Spark 128 GB UMA — spark-e)
+
 # Available models: short-name -> HuggingFace model ID
 declare -A VLLM_MODELS
 VLLM_MODELS=(
+  # large — DGX Spark (128 GB UMA, NVFP4 tensor cores)
   ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
   ["llama-3.3-70b"]="unsloth/Llama-3.3-70B-Instruct-FP8-Dynamic"
-  ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
   ["gemma-4-26b"]="google/gemma-4-26B-A4B-it"
+  # medium — RTX 4060 Ti 16 GB (jarvis) and up
+  ["llama-3.1-8b"]="meta-llama/Meta-Llama-3.1-8B-Instruct"
+  ["qwen2.5-14b-int4"]="Qwen/Qwen2.5-14B-Instruct-GPTQ-Int4"
+  ["deepseek-r1-7b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"
+  # small — RTX 3050 4 GB (wheatley) and up
+  ["deepseek-r1-1.5b"]="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+  ["qwen2.5-1.5b"]="Qwen/Qwen2.5-1.5B-Instruct"
+  ["llama-3.2-1b"]="meta-llama/Llama-3.2-1B-Instruct"
 )
 
-# Stable display order
+# Stable display order (large -> medium -> small)
 MODEL_KEYS=(
   "nemotron-super-120b"
   "nemotron-nano-30b"
   "llama-3.3-70b"
-  "llama-3.1-8b"
   "gemma-4-26b"
+  "llama-3.1-8b"
+  "qwen2.5-14b-int4"
+  "deepseek-r1-7b"
+  "deepseek-r1-1.5b"
+  "qwen2.5-1.5b"
+  "llama-3.2-1b"
+)
+
+# Minimum GPU profile required to run each model
+declare -A MODEL_MIN_PROFILE
+MODEL_MIN_PROFILE=(
+  ["nemotron-super-120b"]="large"
+  ["nemotron-nano-30b"]="large"
+  ["llama-3.3-70b"]="large"
+  ["gemma-4-26b"]="large"
+  ["llama-3.1-8b"]="medium"
+  ["qwen2.5-14b-int4"]="medium"
+  ["deepseek-r1-7b"]="medium"
+  ["deepseek-r1-1.5b"]="small"
+  ["qwen2.5-1.5b"]="small"
+  ["llama-3.2-1b"]="small"
 )
 
 # Per-model environment variable overrides (space-separated -e K=V strings)
@@ -38,18 +71,31 @@ MODEL_EXTRA_ENVS=(
   ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_USE_FLASHINFER_MOE_FP4=0"
   ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
   ["llama-3.3-70b"]=""
-  ["llama-3.1-8b"]=""
   ["gemma-4-26b"]=""
+  ["llama-3.1-8b"]=""
+  ["qwen2.5-14b-int4"]=""
+  ["deepseek-r1-7b"]=""
+  ["deepseek-r1-1.5b"]=""
+  ["qwen2.5-1.5b"]=""
+  ["llama-3.2-1b"]=""
 )
 
-# Per-model vllm serve flags appended after the model name
+# Per-model vllm serve flags — tuned for the model's minimum profile
 declare -A MODEL_SERVE_ARGS
 MODEL_SERVE_ARGS=(
+  # large
   ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
   ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
   ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
-  ["llama-3.1-8b"]="--max-model-len 131072 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["gemma-4-26b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --limit-mm-per-prompt {\"image\":150,\"video\":1,\"audio\":0} --enable-prefix-caching"
+  # medium — conservative context so KV cache fits in 16 GB
+  ["llama-3.1-8b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
+  ["qwen2.5-14b-int4"]="--quantization gptq --max-model-len 8192 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser hermes"
+  ["deepseek-r1-7b"]="--max-model-len 16384 --gpu-memory-utilization 0.90"
+  # small — tight limits for 4 GB; single sequence to avoid OOM
+  ["deepseek-r1-1.5b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1"
+  ["qwen2.5-1.5b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-auto-tool-choice --tool-call-parser hermes"
+  ["llama-3.2-1b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-auto-tool-choice --tool-call-parser llama3_json"
 )
 
 DRY_RUN=false
@@ -63,6 +109,30 @@ run_cmd() {
     return 0
   fi
   "$@"
+}
+
+# Detect GPU profile from nvidia-smi VRAM; falls back to "large" if detection fails.
+detect_gpu_profile() {
+  local vram_mb
+  vram_mb=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null \
+    | head -1 | tr -d ' ')
+  if [[ -z "$vram_mb" || ! "$vram_mb" =~ ^[0-9]+$ ]]; then
+    echo "large"
+    return
+  fi
+  if   (( vram_mb <=  6000 )); then echo "small"
+  elif (( vram_mb <= 20000 )); then echo "medium"
+  else                               echo "large"
+  fi
+}
+
+profile_level() {
+  case "$1" in
+    small)  echo 1 ;;
+    medium) echo 2 ;;
+    large)  echo 3 ;;
+    *)      echo 0 ;;
+  esac
 }
 
 usage() {
@@ -101,9 +171,26 @@ require_hf_token() {
 }
 
 select_model() {
+  local profile host_level
+  profile=$(detect_gpu_profile)
+  host_level=$(profile_level "$profile")
+  echo "GPU profile: $profile"
+
+  local available_keys=()
+  for key in "${MODEL_KEYS[@]}"; do
+    local min_level
+    min_level=$(profile_level "${MODEL_MIN_PROFILE[$key]:-small}")
+    (( host_level >= min_level )) && available_keys+=("$key")
+  done
+
+  if [[ ${#available_keys[@]} -eq 0 ]]; then
+    echo "ERROR: no models available for profile '$profile'" >&2
+    exit 1
+  fi
+
   echo "Available vLLM models:"
   PS3="Select a model (enter number): "
-  select CHOICE in "${MODEL_KEYS[@]}" "Quit"; do
+  select CHOICE in "${available_keys[@]}" "Quit"; do
     if [[ "$CHOICE" == "Quit" ]]; then
       echo "Exiting."
       exit 0

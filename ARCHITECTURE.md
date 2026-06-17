@@ -31,7 +31,9 @@ knowledge, and a physical robot acts as an edge agent in the real world.
 |-----------|----------|----|-------|------|
 | NVIDIA DGX Spark | spark-e.homelab.kubernerdes.com | 10.10.12.251 | GB10 SoC, 128GB unified memory | Primary inference engine |
 | NUC Gen13 (x3) | nuc-0[1-3] | 10.10.12.10[1-3] | 64GB RAM each | Harvester cluster nodes |
-| Dell XPS 9520 | blackmesa.homelab.kubernerdes.com | 10.10.12.252 | — | NemoClaw host (Ubuntu 22.04) |
+| Dell XPS 9520 | wheatley.homelab.kubernerdes.com | 10.10.12.252 | Ubuntu 22.04, RTX 3050 4GB | Local inference (small models) |
+| Asus i9 | jarvis.homelab.kubernerdes.com | 10.10.12.250 | RTX 4060 Ti 16GB | Local inference (medium models) |
+| Lenovo | blackmesa.homelab.kubernerdes.com | 10.10.12.247 | — | Connects to external host for inference |
 | Waveshare Jetbot | wall-e.homelab.kubernerdes.com | 10.10.12.248 | Jetson Nano | Physical edge device (deferred) |
 
 

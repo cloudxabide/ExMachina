@@ -29,7 +29,9 @@ Domain: `homelab.kubernerdes.com` | SSH key: `~/.ssh/id_ecdsa-kubernerdes`
 | nuc-02 | 10.10.12.102 | rancher | Harvester worker |
 | nuc-03 | 10.10.12.103 | rancher | Harvester worker |
 | spark-e | 10.10.12.251 | jradtke | DGX Spark — vLLM + LiteLLM |
-| blackmesa | 10.10.12.252 | jradtke | Dell XPS 9520 (Ubuntu 22.04) — NemoClaw host |
+| wheatley | 10.10.12.252 | jradtke | Dell XPS 9520 (Ubuntu 22.04) — RTX 3050 4GB — local inference |
+| jarvis | 10.10.12.250 | jradtke | Asus i9 — RTX 4060 Ti 16GB — local inference |
+| blackmesa | 10.10.12.247 | jradtke | Lenovo — connects to external host for inference |
 | wall-e | 10.10.12.248 | jetbot | Waveshare Jetbot (JetPack 4.6) |
 
 SSH config artifact: `files/ssh/config`

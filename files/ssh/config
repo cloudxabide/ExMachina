@@ -3,9 +3,19 @@ Host spark-e spark-e.homelab.kubernerdes.com
     User mansible
     IdentityFile ~/.ssh/id_ecdsa-kubernerdes
 
+Host blackmesa blackmesa.homelab.kubernerdes.com
+    HostName 10.10.12.247
+    User jradtke
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
 Host wheatley wheatley.homelab.kubernerdes.com
     HostName 10.10.12.252
     User mansible
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host jarvis jarvis.homelab.kubernerdes.com
+    HostName 10.10.12.250
+    User jradtke
     IdentityFile ~/.ssh/id_ecdsa-kubernerdes
 
 Host wall-e wall-e.homelab.kubernerdes.com
