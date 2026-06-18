@@ -39,6 +39,9 @@ configure_firewall() {
     "443/tcp"   # HTTPS ingress
     "6443/tcp"  # Kubernetes API server
     "10250/tcp" # Kubelet API (required by metrics-server)
+    "30300/tcp" # NodePort — Grafana
+    "30500/tcp" # NodePort — MLflow
+    "30800/tcp" # NodePort — vLLM inference
   )
 
   for port in "${ports[@]}"; do
