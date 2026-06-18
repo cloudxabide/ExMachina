@@ -1,5 +1,6 @@
 # Helm values for bitnami/mlflow
 # Single-node RKE2 deployment on Jarvis
+# MinIO disabled — artifact store is the tracking server's own PVC (simpler, no extra images)
 #
 # Install:
 #   helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -16,6 +17,10 @@ tracking:
     enabled: true
     storageClass: local-path
     size: 100Gi
+
+# Disable MinIO — store artifacts on the tracking server PVC instead
+minio:
+  enabled: false
 
 postgresql:
   enabled: true

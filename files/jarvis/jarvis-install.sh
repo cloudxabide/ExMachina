@@ -156,6 +156,15 @@ install_local_path_provisioner() {
   ${KUBECTL} patch storageclass local-path \
     -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
+  # Create backing directory with correct SELinux context so helper pods can mkdir inside it.
+  # Without container_file_t, mkdir inside the hostPath mount is denied even with 777 perms.
+  info "Creating backing directory with container_file_t SELinux context..."
+  mkdir -p /opt/local-path-provisioner
+  chmod 777 /opt/local-path-provisioner
+  if command -v chcon &>/dev/null; then
+    chcon -Rt container_file_t /opt/local-path-provisioner
+  fi
+
   info "local-path-provisioner installed. Backing dir: /opt/local-path-provisioner"
 }
 
