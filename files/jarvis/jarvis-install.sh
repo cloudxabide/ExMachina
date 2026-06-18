@@ -18,6 +18,40 @@ require_root() {
   [[ $EUID -eq 0 ]] || die "This script must be run as root."
 }
 
+# ── Firewall ─────────────────────────────────────────────────────────────────
+
+configure_firewall() {
+  if ! command -v firewall-cmd &>/dev/null; then
+    info "firewalld not found — skipping firewall configuration."
+    return
+  fi
+
+  if ! systemctl is-active --quiet firewalld; then
+    info "firewalld is not running — skipping firewall configuration."
+    return
+  fi
+
+  info "Configuring firewall rules for RKE2..."
+
+  local ports=(
+    "80/tcp"    # HTTP ingress
+    "443/tcp"   # HTTPS ingress
+    "6443/tcp"  # Kubernetes API server
+  )
+
+  for port in "${ports[@]}"; do
+    if firewall-cmd --query-port="${port}" --permanent &>/dev/null; then
+      info "  ${port} already open — skipping."
+    else
+      firewall-cmd --add-port="${port}" --permanent
+      info "  Opened ${port}."
+    fi
+  done
+
+  firewall-cmd --reload
+  info "Firewall rules applied."
+}
+
 # ── RKE2 ─────────────────────────────────────────────────────────────────────
 
 install_rke2() {
@@ -106,6 +140,7 @@ verify_gpu_operator() {
 # ── main ─────────────────────────────────────────────────────────────────────
 
 require_root
+configure_firewall
 install_rke2
 configure_kubeconfig
 install_helm
