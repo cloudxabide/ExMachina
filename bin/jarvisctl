@@ -16,6 +16,7 @@ Commands:
   start        Start rke2-server and verify GPU Operator is healthy
   stop         Stop rke2-server
   status       Show rke2-server state and GPU Operator pod status
+  test         Run a GPU test pod (nvidia-smi) and report pass/fail
   update       Update RKE2 to the latest stable release
   self-update  Pull the latest version of this script from git
 EOF
@@ -96,6 +97,63 @@ do_update() {
   echo "Update complete."
 }
 
+do_test() {
+  export KUBECONFIG=${KUBECONFIG}
+  local pod=gpu-test-$$
+
+  echo "Submitting GPU test pod (${pod})..."
+  ${KUBECTL} apply -f - <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ${pod}
+  namespace: default
+spec:
+  restartPolicy: Never
+  containers:
+  - name: cuda
+    image: nvcr.io/nvidia/cuda:12.4.0-base-ubuntu22.04
+    command: ["nvidia-smi"]
+    resources:
+      limits:
+        nvidia.com/gpu: 1
+EOF
+
+  echo "Waiting for pod to complete (timeout 120s)..."
+  local timeout=120 elapsed=0
+  while true; do
+    phase=$(${KUBECTL} get pod "${pod}" -n default -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+    case "$phase" in
+      Succeeded)
+        echo ""
+        echo "=== nvidia-smi output ==="
+        ${KUBECTL} logs "${pod}" -n default
+        echo ""
+        echo "PASS: GPU is accessible inside Kubernetes."
+        ${KUBECTL} delete pod "${pod}" -n default --ignore-not-found >/dev/null
+        return 0
+        ;;
+      Failed)
+        echo ""
+        echo "=== pod logs ==="
+        ${KUBECTL} logs "${pod}" -n default || true
+        echo ""
+        echo "FAIL: GPU test pod exited with failure."
+        ${KUBECTL} delete pod "${pod}" -n default --ignore-not-found >/dev/null
+        return 1
+        ;;
+    esac
+    if (( elapsed >= timeout )); then
+      echo "FAIL: pod did not complete within ${timeout}s (phase: ${phase})."
+      ${KUBECTL} describe pod "${pod}" -n default || true
+      ${KUBECTL} delete pod "${pod}" -n default --ignore-not-found >/dev/null
+      return 1
+    fi
+    sleep 5
+    (( elapsed += 5 ))
+  done
+}
+
 do_self_update() {
   local script_path
   script_path=$(readlink -f "$0")
@@ -155,6 +213,7 @@ case "$cmd" in
   start)       require_root; do_start ;;
   stop)        require_root; do_stop ;;
   status)      do_status ;;
+  test)        do_test ;;
   update)      require_root; do_update ;;
   self-update) do_self_update ;;
   *)
