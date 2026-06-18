@@ -17,7 +17,10 @@ data:
           model: "openai/nvidia/Nemotron-Elastic-12B"
           api_base: "http://vllm-nemotron-12b.vllm.svc.cluster.local:8000/v1"
           api_key: "dummy"
-          max_tokens: 4000
+        model_info:
+          max_tokens: 32768
+          max_output_tokens: 32768
+          max_input_tokens: 32768
 ---
 apiVersion: apps/v1
 kind: Deployment
