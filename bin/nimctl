@@ -12,7 +12,7 @@ set -euo pipefail
 # openai/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4
 #
 declare -A NIM_MODELS=(
-  ["llama-3.1-8b-instruct"]="meta/llama-3.1-8b-instruct-dgx-spark:latest"
+  ["llama-3.1-8b-instruct"]="meta/llama-3.1-8b-instruct-dgx-spark:1.8.4"
   ["llama-3.1-nemotron-70b"]="nvidia/llama-3.1-nemotron-70b-instruct:1.2"
   ["nemotron-nano-9b"]="nvidia/nvidia-nemotron-nano-9b-v2-dgx-spark:1.0.0-variant"
   ["nemotron-3-8b"]="nvidia/nemotron-3:8b-instruct"
@@ -139,7 +139,7 @@ EOF
     --network=host \
     -e OPENAI_API_KEY=dummy \
     -v "$LITELLM_CONFIG_DIR/config.yaml:/app/config.yaml:ro" \
-    ghcr.io/berriai/litellm:main-latest \
+    ghcr.io/berriai/litellm:main-stable \
     --config /app/config.yaml \
     --port 4000 \
     --host "$PRIMARY_IP"

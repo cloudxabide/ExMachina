@@ -285,7 +285,7 @@ EOF
     --network=host
     -e OPENAI_API_KEY=dummy
     -v "$config_path:/app/config.yaml:ro"
-    ghcr.io/berriai/litellm:main-latest
+    ghcr.io/berriai/litellm:main-stable
     --config /app/config.yaml
     --port 4000
     --host "$primary_ip"
