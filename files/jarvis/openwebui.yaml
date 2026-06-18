@@ -1,0 +1,83 @@
+---
+# OpenWebUI — chat interface in front of host-bound vLLM.
+# vLLM runs via Docker on the host at http://10.10.12.250:8000
+# This workload runs in K8s (no GPU needed — pure web app).
+#
+# Apply:
+#   kubectl apply -f openwebui.yaml
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openwebui-data
+  namespace: vllm
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openwebui
+  namespace: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openwebui
+  template:
+    metadata:
+      labels:
+        app: openwebui
+    spec:
+      containers:
+      - name: openwebui
+        image: ghcr.io/open-webui/open-webui:stable
+        env:
+        - name: OPENAI_API_BASE_URL
+          value: "http://10.10.12.250:8000/v1"
+        - name: OPENAI_API_KEY
+          value: "dummy"
+        - name: WEBUI_AUTH
+          value: "false"
+        ports:
+        - containerPort: 8080
+          name: http
+        volumeMounts:
+        - name: data
+          mountPath: /app/backend/data
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "200m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: openwebui-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openwebui
+  namespace: vllm
+spec:
+  selector:
+    app: openwebui
+  type: NodePort
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    nodePort: 30200

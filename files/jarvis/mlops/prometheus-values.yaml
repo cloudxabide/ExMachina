@@ -10,10 +10,17 @@
 prometheus:
   prometheusSpec:
     retention: 30d
-    # Discover ServiceMonitors in all namespaces (needed for vllm namespace)
+    # Discover ServiceMonitors in all namespaces
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorSelector: {}
     serviceMonitorNamespaceSelector: {}
+    # Scrape host-bound vLLM directly (runs via Docker outside K8s)
+    additionalScrapeConfigs:
+    - job_name: 'vllm-host'
+      static_configs:
+      - targets: ['10.10.12.250:8000']
+      metrics_path: /metrics
+      scrape_interval: 30s
     # PVC-backed storage on local-path
     storageSpec:
       volumeClaimTemplate:

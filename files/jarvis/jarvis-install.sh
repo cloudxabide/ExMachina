@@ -41,8 +41,8 @@ configure_firewall() {
     "10250/tcp" # Kubelet API (required by metrics-server)
     "30300/tcp" # NodePort — Grafana
     "30500/tcp" # NodePort — MLflow
-    "30800/tcp" # NodePort — vLLM inference
-    "30801/tcp" # NodePort — LiteLLM proxy (rewrites max_tokens for Claude Code / maude)
+    "8000/tcp"  # Host Docker — vLLM inference (outside K8s)
+    "30200/tcp" # NodePort — OpenWebUI
   )
 
   for port in "${ports[@]}"; do

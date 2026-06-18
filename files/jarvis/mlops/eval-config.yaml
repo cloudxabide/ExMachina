@@ -8,7 +8,7 @@ metadata:
   name: eval-config
   namespace: vllm
 data:
-  VLLM_BASE_URL: "http://vllm-nemotron-12b.vllm.svc.cluster.local:8000/v1"
+  VLLM_BASE_URL: "http://10.10.12.250:8000/v1"
   MLFLOW_TRACKING_URI: "http://mlflow.mlflow.svc.cluster.local:5000"   # matches mlflow-deployment.yaml service name
   MODEL_ID: "nvidia/Nemotron-Elastic-12B"
   EVAL_TASKS: "mmlu,arc_easy,gsm8k"
