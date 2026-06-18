@@ -1,0 +1,143 @@
+---
+# Ingress resources for *.jarvis.homelab.kubernerdes.com
+# Requires: wildcard DNS A record *.jarvis.homelab.kubernerdes.com → 10.10.12.250
+# Nginx Ingress Controller is already running (rke2-ingress-nginx).
+#
+# Apply:
+#   kubectl apply -f ingress.yaml
+#
+# Services:
+#   http://openwebui.jarvis.homelab.kubernerdes.com  → OpenWebUI (chat UI)
+#   http://grafana.jarvis.homelab.kubernerdes.com    → Grafana (monitoring)
+#   http://mlflow.jarvis.homelab.kubernerdes.com     → MLflow (model registry)
+#   http://prometheus.jarvis.homelab.kubernerdes.com → Prometheus
+#   http://vllm.jarvis.homelab.kubernerdes.com       → vLLM API (host Docker)
+
+---
+# ExternalName + Endpoints to proxy to host-bound vLLM (runs via Docker, not K8s)
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: vllm-host
+  namespace: vllm
+subsets:
+- addresses:
+  - ip: 10.10.12.250
+  ports:
+  - port: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-host
+  namespace: vllm
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+---
+# OpenWebUI
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openwebui
+  namespace: vllm
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: openwebui.jarvis.homelab.kubernerdes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: openwebui
+            port:
+              number: 8080
+---
+# vLLM API (host Docker)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: vllm-host
+  namespace: vllm
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: vllm.jarvis.homelab.kubernerdes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: vllm-host
+            port:
+              number: 8000
+---
+# Grafana
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: grafana.jarvis.homelab.kubernerdes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kube-prometheus-stack-grafana
+            port:
+              number: 80
+---
+# Prometheus
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: prometheus.jarvis.homelab.kubernerdes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kube-prometheus-stack-prometheus
+            port:
+              number: 9090
+---
+# MLflow
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mlflow
+  namespace: mlflow
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: mlflow.jarvis.homelab.kubernerdes.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: mlflow
+            port:
+              number: 5000
