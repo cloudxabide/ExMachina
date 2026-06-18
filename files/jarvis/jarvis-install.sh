@@ -42,6 +42,7 @@ configure_firewall() {
     "30300/tcp" # NodePort — Grafana
     "30500/tcp" # NodePort — MLflow
     "30800/tcp" # NodePort — vLLM inference
+    "30801/tcp" # NodePort — LiteLLM proxy (rewrites max_tokens for Claude Code / maude)
   )
 
   for port in "${ports[@]}"; do

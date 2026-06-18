@@ -1,0 +1,81 @@
+---
+# LiteLLM proxy in front of vLLM.
+# Rewrites max_completion_tokens to fit within max_model_len=4096 so clients
+# like Claude Code / maude that send large default values don't get 400s.
+# NodePort 30801 → point maude at 10.10.12.250:30801 instead of :30800.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  namespace: vllm
+data:
+  config.yaml: |
+    model_list:
+      - model_name: "*"
+        litellm_params:
+          model: "openai/nvidia/Nemotron-Elastic-12B"
+          api_base: "http://vllm-nemotron-12b.vllm.svc.cluster.local:8000/v1"
+          api_key: "dummy"
+          max_tokens: 4000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-proxy
+  namespace: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: litellm-proxy
+  template:
+    metadata:
+      labels:
+        app: litellm-proxy
+    spec:
+      containers:
+      - name: litellm
+        image: ghcr.io/berriai/litellm:main-latest
+        args:
+        - --config=/etc/litellm/config.yaml
+        - --port=4000
+        - --host=0.0.0.0
+        ports:
+        - containerPort: 4000
+          name: http
+        volumeMounts:
+        - name: config
+          mountPath: /etc/litellm
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 4000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: litellm-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-proxy
+  namespace: vllm
+spec:
+  selector:
+    app: litellm-proxy
+  type: NodePort
+  ports:
+  - name: http
+    port: 4000
+    targetPort: 4000
+    nodePort: 30801
