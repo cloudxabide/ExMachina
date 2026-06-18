@@ -32,6 +32,8 @@ metadata:
   namespace: vllm
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: vllm-nemotron-12b
@@ -54,6 +56,7 @@ spec:
         - --gpu-memory-utilization=0.85
         - --enable-auto-tool-choice
         - --tool-call-parser=hermes
+        - --trust-remote-code
         env:
         - name: HF_TOKEN
           valueFrom:
