@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_RAW_URL="https://raw.githubusercontent.com/cloudxabide/ExMachina/main/bin/jarvisctl"
+SCRIPT_SHA256_URL="https://raw.githubusercontent.com/cloudxabide/ExMachina/main/bin/jarvisctl.sha256"
+
+KUBECONFIG=/etc/rancher/rke2/rke2.yaml
+KUBECTL=/var/lib/rancher/rke2/bin/kubectl
+GPU_OPERATOR_NS=gpu-operator
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") <command>
+
+Commands:
+  start        Start rke2-server and verify GPU Operator is healthy
+  stop         Stop rke2-server
+  status       Show rke2-server state and GPU Operator pod status
+  update       Update RKE2 to the latest stable release
+  self-update  Pull the latest version of this script from git
+EOF
+  exit 1
+}
+
+require_root() {
+  [[ $EUID -eq 0 ]] || { echo "Error: must be run as root." >&2; exit 1; }
+}
+
+do_start() {
+  if systemctl is-active --quiet rke2-server; then
+    echo "rke2-server is already running."
+  else
+    echo "Starting rke2-server..."
+    systemctl start rke2-server
+    echo "Started."
+  fi
+
+  echo "Waiting for node to become Ready..."
+  local timeout=120 elapsed=0
+  until KUBECONFIG=${KUBECONFIG} ${KUBECTL} get node --no-headers 2>/dev/null \
+      | awk '{print $2}' | grep -q "^Ready$"; do
+    if (( elapsed >= timeout )); then
+      echo "Error: node did not become Ready within ${timeout}s." >&2
+      exit 1
+    fi
+    sleep 5
+    (( elapsed += 5 ))
+  done
+  echo "Node is Ready."
+
+  echo ""
+  echo "GPU Operator pods:"
+  KUBECONFIG=${KUBECONFIG} ${KUBECTL} get pods -n ${GPU_OPERATOR_NS} 2>/dev/null \
+    || echo "  (GPU Operator namespace not found)"
+}
+
+do_stop() {
+  if systemctl is-active --quiet rke2-server; then
+    echo "Stopping rke2-server..."
+    systemctl stop rke2-server
+    echo "Stopped."
+  else
+    echo "rke2-server is not running."
+  fi
+}
+
+do_status() {
+  echo "=== rke2-server ==="
+  systemctl status rke2-server --no-pager --lines=0 2>/dev/null || true
+
+  echo ""
+  echo "=== Node ==="
+  KUBECONFIG=${KUBECONFIG} ${KUBECTL} get node 2>/dev/null \
+    || echo "  (cluster unreachable)"
+
+  echo ""
+  echo "=== GPU Operator (${GPU_OPERATOR_NS}) ==="
+  KUBECONFIG=${KUBECONFIG} ${KUBECTL} get pods -n ${GPU_OPERATOR_NS} 2>/dev/null \
+    || echo "  (namespace not found or cluster unreachable)"
+}
+
+do_update() {
+  echo "Updating RKE2 to latest stable..."
+  curl -sfL https://get.rke2.io | INSTALL_RKE2_CHANNEL=stable sh -
+
+  local was_running=false
+  systemctl is-active --quiet rke2-server && was_running=true
+
+  if $was_running; then
+    echo "Restarting rke2-server..."
+    systemctl restart rke2-server
+    echo "Restarted."
+  fi
+
+  rke2 --version
+  echo "Update complete."
+}
+
+do_self_update() {
+  local script_path
+  script_path=$(readlink -f "$0")
+  local repo_root
+  repo_root=$(git -C "$(dirname "$script_path")" rev-parse --show-toplevel 2>/dev/null || true)
+
+  if [[ -n "$repo_root" ]]; then
+    echo "Repo: $repo_root"
+    local before after
+    before=$(git -C "$repo_root" rev-parse HEAD)
+    git -C "$repo_root" pull --ff-only
+    after=$(git -C "$repo_root" rev-parse HEAD)
+    if [[ "$before" == "$after" ]]; then
+      echo "Already up to date."
+      return
+    fi
+    echo ""
+    echo "Updated ${before:0:7}..${after:0:7}"
+    git -C "$repo_root" log --oneline "${before}..${after}"
+    if git -C "$repo_root" diff --name-only "${before}..${after}" | grep -q "$(basename "$script_path")"; then
+      echo ""
+      echo "$(basename "$0") was updated — changes are live."
+    fi
+  else
+    echo "Fetching latest $(basename "$0") from GitHub..."
+    local tmp tmp_sum
+    tmp=$(mktemp)
+    tmp_sum=$(mktemp)
+    if ! curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp"; then
+      echo "Error: download failed from $SCRIPT_RAW_URL" >&2
+      rm -f "$tmp" "$tmp_sum"; exit 1
+    fi
+    if ! curl -fsSL "$SCRIPT_SHA256_URL" -o "$tmp_sum"; then
+      echo "Error: checksum download failed from $SCRIPT_SHA256_URL" >&2
+      rm -f "$tmp" "$tmp_sum"; exit 1
+    fi
+    local expected actual
+    expected=$(tr -d '[:space:]' < "$tmp_sum")
+    actual=$(sha256sum "$tmp" | awk '{print $1}')
+    if [[ "$expected" != "$actual" ]]; then
+      echo "Error: checksum mismatch (expected $expected, got $actual)" >&2
+      rm -f "$tmp" "$tmp_sum"; exit 1
+    fi
+    chmod +x "$tmp"
+    cp "$tmp" "$script_path"
+    rm -f "$tmp" "$tmp_sum"
+    echo "$(basename "$0") updated (checksum verified)."
+  fi
+}
+
+# ── main ─────────────────────────────────────────────────────────────────────
+
+cmd="${1:-}"
+[[ -z "$cmd" ]] && usage
+
+case "$cmd" in
+  start)       require_root; do_start ;;
+  stop)        require_root; do_stop ;;
+  status)      do_status ;;
+  update)      require_root; do_update ;;
+  self-update) do_self_update ;;
+  *)
+    echo "Error: Unknown command '${cmd}'" >&2
+    usage
+    ;;
+esac
