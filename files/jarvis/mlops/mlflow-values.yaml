@@ -1,0 +1,26 @@
+# Helm values for bitnami/mlflow
+# Single-node RKE2 deployment on Jarvis
+#
+# Install:
+#   helm repo add bitnami https://charts.bitnami.com/bitnami
+#   helm install mlflow bitnami/mlflow \
+#     -n mlflow --create-namespace \
+#     -f mlflow-values.yaml
+
+tracking:
+  service:
+    type: NodePort
+    nodePorts:
+      http: "30500"
+  persistence:
+    enabled: true
+    storageClass: local-path
+    size: 100Gi
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      enabled: true
+      storageClass: local-path
+      size: 20Gi

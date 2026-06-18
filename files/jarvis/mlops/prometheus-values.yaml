@@ -1,0 +1,71 @@
+# Helm values for prometheus-community/kube-prometheus-stack
+# Single-node RKE2 deployment on Jarvis (RTX 4060 Ti, 128GB RAM)
+#
+# Install:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+#     -n monitoring --create-namespace \
+#     -f prometheus-values.yaml
+
+prometheus:
+  prometheusSpec:
+    retention: 30d
+    # Discover ServiceMonitors in all namespaces (needed for vllm namespace)
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    # PVC-backed storage on local-path
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 50Gi
+    # Reduce scrape frequency to avoid competing with GPU inference workload
+    scrapeInterval: 60s
+    evaluationInterval: 60s
+
+grafana:
+  adminPassword: "changeme"
+  service:
+    type: NodePort
+    nodePort: 30300
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 10Gi
+  # Auto-load dashboards from ConfigMaps with this label
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 5Gi
+
+# Single-node tolerations — allow scheduling on the control-plane node
+kubeStateMetrics:
+  tolerations:
+  - operator: Exists
+
+prometheus-node-exporter:
+  tolerations:
+  - operator: Exists
+
+# DCGM exporter ships with GPU Operator; disable the bundled dcgm-exporter
+# to avoid conflicts if GPU Operator already exposes DCGM metrics
+prometheusOperator:
+  tolerations:
+  - operator: Exists

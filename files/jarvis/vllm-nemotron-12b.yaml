@@ -1,0 +1,110 @@
+---
+# vLLM serving Nemotron-Elastic-12B as a Kubernetes workload on Jarvis.
+# Requires: GPU Operator running, local-path StorageClass, HF_TOKEN secret.
+#
+# Pre-flight:
+#   kubectl create secret generic hf-token \
+#     --from-literal=HF_TOKEN=<your-token>
+#
+# Apply:
+#   kubectl apply -f vllm-nemotron-12b.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vllm
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache
+  namespace: vllm
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-nemotron-12b
+  namespace: vllm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vllm-nemotron-12b
+  template:
+    metadata:
+      labels:
+        app: vllm-nemotron-12b
+    spec:
+      containers:
+      - name: vllm
+        image: nvcr.io/nvidia/vllm:26.03.post1-py3
+        command:
+        - vllm
+        - serve
+        - nvidia/Nemotron-Elastic-12B
+        - --host=0.0.0.0
+        - --port=8000
+        - --quantization=fp8
+        - --max-model-len=8192
+        - --gpu-memory-utilization=0.85
+        - --enable-auto-tool-choice
+        - --tool-call-parser=hermes
+        env:
+        - name: HF_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: hf-token
+              key: HF_TOKEN
+        ports:
+        - containerPort: 8000
+          name: http
+        resources:
+          limits:
+            nvidia.com/gpu: "1"
+          requests:
+            nvidia.com/gpu: "1"
+        volumeMounts:
+        - name: hf-cache
+          mountPath: /root/.cache/huggingface
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 120
+          periodSeconds: 15
+          failureThreshold: 20
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 180
+          periodSeconds: 30
+          failureThreshold: 3
+      volumes:
+      - name: hf-cache
+        persistentVolumeClaim:
+          claimName: hf-cache
+      tolerations:
+      - key: nvidia.com/gpu
+        operator: Exists
+        effect: NoSchedule
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-nemotron-12b
+  namespace: vllm
+spec:
+  selector:
+    app: vllm-nemotron-12b
+  type: NodePort
+  ports:
+  - name: http
+    port: 8000
+    targetPort: 8000
+    nodePort: 30800

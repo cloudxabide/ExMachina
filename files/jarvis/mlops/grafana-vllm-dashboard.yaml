@@ -1,0 +1,124 @@
+---
+# Grafana dashboard for vLLM inference monitoring on Jarvis.
+# Loaded automatically by the Grafana sidecar when label grafana_dashboard: "1" is set.
+# Metrics come from vLLM's native /metrics endpoint (via ServiceMonitor) and
+# NVIDIA DCGM exporter (ships with GPU Operator).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-vllm-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  vllm-dashboard.json: |
+    {
+      "title": "vLLM — Jarvis Inference",
+      "uid": "vllm-jarvis",
+      "schemaVersion": 38,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1, "type": "stat", "title": "Requests Running",
+          "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "vllm:num_requests_running{job=~\"vllm.*\"}", "legendFormat": "" }],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+        },
+        {
+          "id": 2, "type": "stat", "title": "Requests Queued",
+          "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "vllm:num_requests_waiting{job=~\"vllm.*\"}", "legendFormat": "" }],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+        },
+        {
+          "id": 3, "type": "stat", "title": "KV Cache Used %",
+          "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "vllm:gpu_cache_usage_perc{job=~\"vllm.*\"} * 100", "legendFormat": "" }],
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "colorMode": "background",
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 70 },
+                { "color": "red", "value": 90 }
+              ]
+            }
+          }
+        },
+        {
+          "id": 4, "type": "stat", "title": "GPU Memory Used",
+          "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "DCGM_FI_DEV_FB_USED / 1024", "legendFormat": "GiB" }],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "unit": "gibytes" }
+        },
+        {
+          "id": 5, "type": "stat", "title": "GPU Temp",
+          "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "DCGM_FI_DEV_GPU_TEMP", "legendFormat": "°C" }],
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "colorMode": "background",
+            "thresholds": {
+              "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 75 },
+                { "color": "red", "value": 85 }
+              ]
+            }
+          }
+        },
+        {
+          "id": 6, "type": "stat", "title": "GPU Power (W)",
+          "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
+          "targets": [{ "expr": "DCGM_FI_DEV_POWER_USAGE", "legendFormat": "W" }],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+        },
+        {
+          "id": 10, "type": "timeseries", "title": "Time to First Token (ms)",
+          "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, rate(vllm:time_to_first_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(vllm:time_to_first_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.99, rate(vllm:time_to_first_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p99" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ms" } }
+        },
+        {
+          "id": 11, "type": "timeseries", "title": "Time per Output Token (ms)",
+          "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+          "targets": [
+            { "expr": "histogram_quantile(0.50, rate(vllm:time_per_output_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p50" },
+            { "expr": "histogram_quantile(0.95, rate(vllm:time_per_output_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p95" },
+            { "expr": "histogram_quantile(0.99, rate(vllm:time_per_output_token_seconds_bucket{job=~\"vllm.*\"}[5m])) * 1000", "legendFormat": "p99" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ms" } }
+        },
+        {
+          "id": 12, "type": "timeseries", "title": "Request Queue Depth",
+          "gridPos": { "x": 0, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            { "expr": "vllm:num_requests_running{job=~\"vllm.*\"}", "legendFormat": "running" },
+            { "expr": "vllm:num_requests_waiting{job=~\"vllm.*\"}", "legendFormat": "waiting" }
+          ]
+        },
+        {
+          "id": 13, "type": "timeseries", "title": "Token Throughput (tokens/s)",
+          "gridPos": { "x": 8, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            { "expr": "rate(vllm:generation_tokens_total{job=~\"vllm.*\"}[1m])", "legendFormat": "generated" },
+            { "expr": "rate(vllm:prompt_tokens_total{job=~\"vllm.*\"}[1m])", "legendFormat": "prompt" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "short" } }
+        },
+        {
+          "id": 14, "type": "timeseries", "title": "GPU Utilization %",
+          "gridPos": { "x": 16, "y": 12, "w": 8, "h": 6 },
+          "targets": [
+            { "expr": "DCGM_FI_DEV_GPU_UTIL", "legendFormat": "GPU util %" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+        }
+      ]
+    }

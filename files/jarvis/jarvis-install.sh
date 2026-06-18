@@ -8,6 +8,7 @@ KUBECONFIG=/etc/rancher/rke2/rke2.yaml
 KUBECTL=/var/lib/rancher/rke2/bin/kubectl
 GPU_OPERATOR_NS=gpu-operator
 GPU_OPERATOR_CHART=nvidia/gpu-operator
+LOCAL_PATH_MANIFEST="https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ configure_firewall() {
     "80/tcp"    # HTTP ingress
     "443/tcp"   # HTTPS ingress
     "6443/tcp"  # Kubernetes API server
+    "10250/tcp" # Kubelet API (required by metrics-server)
   )
 
   for port in "${ports[@]}"; do
@@ -137,6 +139,26 @@ verify_gpu_operator() {
   ${KUBECTL} get pods -n ${GPU_OPERATOR_NS}
 }
 
+# ── Local Path Provisioner ────────────────────────────────────────────────────
+
+install_local_path_provisioner() {
+  export KUBECONFIG=${KUBECONFIG}
+
+  if ${KUBECTL} get storageclass local-path &>/dev/null; then
+    info "local-path StorageClass already exists — skipping."
+    return
+  fi
+
+  info "Installing local-path-provisioner..."
+  ${KUBECTL} apply -f "${LOCAL_PATH_MANIFEST}"
+
+  info "Setting local-path as the default StorageClass..."
+  ${KUBECTL} patch storageclass local-path \
+    -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+  info "local-path-provisioner installed. Backing dir: /opt/local-path-provisioner"
+}
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 require_root
@@ -146,9 +168,11 @@ configure_kubeconfig
 install_helm
 install_gpu_operator
 verify_gpu_operator
+install_local_path_provisioner
 
 info ""
 info "Install complete."
 info "  kubectl: ${KUBECTL}"
 info "  kubeconfig: ${KUBECONFIG}"
 info "  GPU Operator namespace: ${GPU_OPERATOR_NS}"
+info "  StorageClass: local-path (default, backing dir: /opt/local-path-provisioner)"

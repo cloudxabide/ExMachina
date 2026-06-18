@@ -1,0 +1,22 @@
+---
+# ServiceMonitor tells Prometheus (via kube-prometheus-stack) to scrape
+# vLLM's native /metrics endpoint.
+#
+# The label release: kube-prometheus-stack must match the Helm release name.
+# If you installed the stack with a different release name, update that label.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: vllm-nemotron-12b
+  namespace: vllm
+  labels:
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: vllm-nemotron-12b
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 30s
+    scrapeTimeout: 25s

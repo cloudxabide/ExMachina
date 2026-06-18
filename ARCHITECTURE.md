@@ -109,7 +109,7 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 
 - **Web UI**: OpenWebUI is the likely choice but not yet locked.
 
-- **MLOps scope**: Only relevant if fine-tuning enters scope; skip if inference-only.
+- **MLOps scope**: Three-component stack deployed on Jarvis — see MLOps decision below.
 
 ---
 
@@ -119,6 +119,39 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 - Air-gap capable by default; cloud-optional at most
 - Document decisions here as they are made — this file is the source of truth
 - Prefer integration over invention; don't build what exists
+
+---
+
+### MLOps: Prometheus + MLflow + LM-Eval Harness
+**Date:** 2026-06-18
+
+Inference-focused MLOps stack for Jarvis. Covers runtime monitoring, model registry/experiment tracking, and automated benchmarking. Fine-tuning pipelines are explicitly out of scope; those would add Argo Workflows when the time comes.
+
+| Component | Tool | Helm Chart | NodePort | Purpose |
+|-----------|------|-----------|---------|---------|
+| Runtime monitoring | Prometheus + Grafana | prometheus-community/kube-prometheus-stack | 30300 (Grafana) | Real-time tokens/s, latency, GPU metrics |
+| Model registry + experiment tracking | MLflow + PostgreSQL | bitnami/mlflow | 30500 | Model metadata, benchmark history, param sweeps |
+| Benchmark test suite | LM-Eval Harness | K8s CronJob (nightly 03:00) | — | MMLU, ARC-Easy, GSM8K scores logged to MLflow |
+
+**Data flow:**
+```
+vLLM /metrics → Prometheus → Grafana (live dashboards)
+CronJob lm-eval → vLLM API → results JSON → MLflow (benchmark history)
+```
+
+**Manifests:** `files/jarvis/mlops/`
+- `prometheus-values.yaml` — Helm values (30-day retention, local-path PVCs)
+- `vllm-servicemonitor.yaml` — Prometheus scrape target for vLLM
+- `grafana-vllm-dashboard.yaml` — Dashboard ConfigMap (auto-loaded by Grafana sidecar)
+- `mlflow-values.yaml` — Helm values (PostgreSQL backend, 100Gi artifact PVC)
+- `eval-results-pvc.yaml` — 20Gi PVC for benchmark JSON output
+- `eval-config.yaml` — ConfigMap: benchmark tasks, MLflow URI, vLLM endpoint
+- `eval-cronjob.yaml` — Nightly LM-Eval Harness job
+
+**Not in scope (deferred):**
+- Argo Workflows DAG orchestration (add when fine-tuning enters scope)
+- DeepEval / RAG-specific evaluation (add when Qdrant RAG layer is live)
+- Prometheus alerting rules (add after baseline metrics are established)
 
 ---
 
@@ -161,6 +194,46 @@ sensing, presence) as part of a workflow, not just as a standalone script.
 1. Live cluster state — Harvester metrics, RKE2 workload status, Longhorn health, NeuVector alerts (continuously ingested)
 2. Curated docs / runbooks — operational runbooks, architecture docs, stack vendor docs
 3. Jetbot sensor data — structured observations from the Jetbot (camera descriptions, sensor readings) as episodic memory
+
+---
+
+### Jarvis: Local-Path StorageClass
+**Date:** 2026-06-18
+**Decision:** Use Rancher local-path-provisioner as the default StorageClass on the Jarvis single-node RKE2 cluster.
+**Backing directory:** `/opt/local-path-provisioner` on the root NVMe (`nvme0n1p4`, 836 GB free).
+**Manifest:** `files/jarvis/local-path-storage.yaml`
+
+RKE2 on Jarvis does not ship with a StorageClass pre-configured. local-path-provisioner is the standard Rancher solution for single-node clusters — lightweight, no operator, no external dependencies. Longhorn is the right choice for the multi-node Harvester cluster; local-path is correct for Jarvis.
+
+Note: `ReclaimPolicy: Delete` — PVs are deleted when the PVC is deleted. Workloads requiring persistence (e.g., vLLM model cache) should plan accordingly.
+
+---
+
+### Jarvis: NemoTron Inference (Nemotron-Elastic-12B)
+**Date:** 2026-06-18
+**Decision:** `nvidia/Nemotron-Elastic-12B` with FP8 quantization is the recommended NemoTron model for Jarvis (RTX 4060 Ti 16GB).
+
+| Model | Params | Quantization | Est. VRAM | Verdict |
+|-------|--------|-------------|-----------|---------|
+| Nemotron-Elastic-12B | 12B | FP8 | ~12 GB | **Primary — best fit** |
+| Nemotron-3-Nano-4B | 4B | FP8 | ~5 GB | Lightweight / latency-sensitive |
+| Nemotron-3-Nano-30B | 30B | NVFP4 | ~21 GB | Exceeds 16 GB — not viable |
+
+Both models added to `bin/vllmctl` under the `medium` GPU profile. K8s Deployment manifest: `files/jarvis/vllm-nemotron-12b.yaml`.
+
+---
+
+### NemoClaw on Jarvis: Host-Level Deployment (Not K8s-Native)
+**Date:** 2026-06-18
+**Decision:** NemoClaw runs on the Jarvis host outside of Kubernetes; vLLM runs inside K8s as a Deployment.
+
+NemoClaw's OpenShell gateway requires direct Docker daemon access on the host — incompatible with the K8s pod isolation model. NVIDIA does not publish a Helm chart or K8s manifests for NemoClaw. Running it as a privileged DinD pod is technically possible but not recommended.
+
+The clean split for Jarvis:
+- **K8s workload:** vLLM Deployment + NodePort Service (port 30800) — GPU scheduling, PVC-backed model cache, managed by Rancher
+- **Host process:** NemoClaw (Docker, outside K8s) — configured with `http://localhost:30800` as its inference endpoint
+
+This mirrors the DGX Spark pattern where NemoClaw and vLLM are co-located on the same host but NemoClaw is not a Kubernetes workload.
 
 ---
 

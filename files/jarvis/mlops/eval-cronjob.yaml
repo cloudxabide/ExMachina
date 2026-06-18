@@ -1,0 +1,122 @@
+---
+# Nightly LM-Eval Harness benchmark run.
+# Installs lm-eval + mlflow at startup (acceptable at setup time per air-gap policy).
+# For true air-gap: build a custom image with these packages pre-installed and
+# push it to a local registry, then update image: below.
+#
+# Prerequisites:
+#   kubectl apply -f eval-results-pvc.yaml
+#   kubectl apply -f eval-config.yaml
+#   (MLflow and vLLM must be running)
+#
+# Manual trigger:
+#   kubectl create job --from=cronjob/eval-nemotron-12b manual-run-$(date +%s) -n vllm
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: eval-nemotron-12b
+  namespace: vllm
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 14400  # 4 hours max
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: eval
+            image: python:3.11-slim
+            command: ["/bin/bash", "-c"]
+            args:
+            - |
+              set -euo pipefail
+
+              echo "[eval] Installing dependencies..."
+              pip install --quiet lm-eval mlflow requests
+
+              echo "[eval] Checking vLLM health..."
+              until curl -sf "${VLLM_BASE_URL%/v1}/health" >/dev/null 2>&1; do
+                echo "[eval] Waiting for vLLM..."
+                sleep 15
+              done
+              echo "[eval] vLLM is healthy."
+
+              python3 - <<'PYEOF'
+              import os, json, sys, subprocess, glob, mlflow
+              from datetime import datetime, timezone
+
+              vllm_url     = os.environ["VLLM_BASE_URL"]
+              tracking_uri = os.environ["MLFLOW_TRACKING_URI"]
+              model_id     = os.environ["MODEL_ID"]
+              tasks        = os.environ["EVAL_TASKS"]
+              batch_size   = int(os.environ.get("BATCH_SIZE", "8"))
+              results_dir  = os.environ["RESULTS_DIR"]
+              experiment   = os.environ["MLFLOW_EXPERIMENT"]
+
+              mlflow.set_tracking_uri(tracking_uri)
+              mlflow.set_experiment(experiment)
+              run_name = f"eval-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M')}"
+
+              with mlflow.start_run(run_name=run_name) as run:
+                  mlflow.log_params({
+                      "model_id":      model_id,
+                      "eval_tasks":    tasks,
+                      "batch_size":    batch_size,
+                      "vllm_base_url": vllm_url,
+                  })
+
+                  result = subprocess.run(
+                      [
+                          "lm_eval",
+                          "--model",       "local-completions",
+                          "--model_args",  f"model={model_id},base_url={vllm_url},tokenizer_backend=huggingface,tokenizer={model_id}",
+                          "--tasks",       tasks,
+                          "--batch_size",  str(batch_size),
+                          "--output_path", results_dir,
+                          "--log_samples",
+                      ],
+                      capture_output=True, text=True
+                  )
+
+                  if result.returncode != 0:
+                      mlflow.log_param("eval_status", "failed")
+                      mlflow.log_text(result.stderr[-4096:], "stderr.txt")
+                      print(result.stderr[-2000:], file=sys.stderr)
+                      sys.exit(1)
+
+                  result_files = sorted(glob.glob(f"{results_dir}/*.json"))
+                  if result_files:
+                      latest = result_files[-1]
+                      with open(latest) as f:
+                          data = json.load(f)
+                      for task_name, metrics in data.get("results", {}).items():
+                          for metric_key, value in metrics.items():
+                              if isinstance(value, (int, float)):
+                                  clean_key = f"{task_name}_{metric_key.replace(',', '_').replace(' ', '_')}"
+                                  mlflow.log_metric(clean_key, value)
+                      mlflow.log_artifact(latest, "benchmark_results")
+
+                  mlflow.log_param("eval_status", "success")
+                  print(f"[eval] Run logged to MLflow: {run.info.run_id}")
+              PYEOF
+            envFrom:
+            - configMapRef:
+                name: eval-config
+            volumeMounts:
+            - name: results
+              mountPath: /mnt/results
+            resources:
+              requests:
+                memory: "2Gi"
+                cpu: "500m"
+              limits:
+                memory: "4Gi"
+                cpu: "2"
+          volumes:
+          - name: results
+            persistentVolumeClaim:
+              claimName: eval-results
