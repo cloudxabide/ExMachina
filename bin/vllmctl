@@ -97,7 +97,7 @@ MODEL_SERVE_ARGS=(
   ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["gemma-4-26b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --limit-mm-per-prompt {\"image\":150,\"video\":1,\"audio\":0} --enable-prefix-caching"
   # medium — conservative context so KV cache fits in 16 GB
-  ["nemotron-elastic-12b"]="--quantization fp8 --max-model-len 8192 --gpu-memory-utilization 0.85 --enable-auto-tool-choice --tool-call-parser hermes"
+  ["nemotron-elastic-12b"]="--quantization fp8 --max-model-len 4096 --gpu-memory-utilization 0.92 --enable-auto-tool-choice --tool-call-parser hermes --trust-remote-code"
   ["nemotron-nano-4b"]="--max-model-len 16384 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser hermes"
   ["llama-3.1-8b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["qwen2.5-14b-int4"]="--quantization gptq --max-model-len 8192 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser hermes"
