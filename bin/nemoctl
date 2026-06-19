@@ -105,6 +105,8 @@ do_vllm() {
 
   select_model
 
+  mkdir -p "${HOME}/.cache/huggingface"
+
   local cmd=(
     docker run --rm -it --gpus all
     -e "HF_TOKEN=$HF_TOKEN"
