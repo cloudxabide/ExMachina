@@ -47,7 +47,9 @@ This is not a chat wrapper. It is a goal-directed agentic system with tools, per
 |-----------|----------|----|------|
 | NVIDIA DGX Spark | spark-e | 10.10.12.251 | Primary inference — nemotron-super 120B via vLLM |
 | NUC Gen13 × 3 | nuc-0[1-3] | 10.10.12.10[1-3] | Harvester cluster — orchestration, storage (RKE2 / Longhorn) |
-| Dell XPS 9520 | blackmesa | 10.10.12.252 | NemoClaw host (Ubuntu 22.04) |
+| Dell XPS 9520 | wheatley | 10.10.12.252 | NemoClaw host (Ubuntu 22.04) |
+| Asus i9 | jarvis | 10.10.12.250 | Local inference — RTX 4060 Ti 16GB |
+| Lenovo X1 Yoga ThinkPad | blackmesa | 10.10.12.247 | Connects to external host for inference |
 | Waveshare Jetbot | wall-e | 10.10.12.248 | Physical edge agent — perception + action (Jetson Nano) |
 | Sophos XGS88 | — | — | Perimeter — all traffic stays inside |
 
