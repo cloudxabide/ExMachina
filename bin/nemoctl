@@ -110,7 +110,8 @@ do_vllm() {
   local cmd=(
     docker run --rm -it --gpus all
     -e "HF_TOKEN=$HF_TOKEN"
-    -v "${HOME}/.cache/huggingface:/root/.cache/huggingface"
+    -e "HF_HOME=/hf_cache"
+    -v "${HOME}/.cache/huggingface:/hf_cache"
     -p 8000:8000
   )
 
@@ -156,7 +157,7 @@ do_vllm() {
         --mamba_ssm_cache_dtype float32
         --quantization fp4
         --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
-        --reasoning-parser-plugin "/app/$REASONING_PARSER_FILE"
+        --reasoning-parser-plugin "/app/${REASONING_PARSER_FILE}"
         --reasoning-parser super_v3
         --enable-auto-tool-choice
         --tool-call-parser qwen3_coder
