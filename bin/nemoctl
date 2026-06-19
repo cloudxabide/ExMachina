@@ -2,8 +2,8 @@
 
 #    Status: vLLM  | Working | Still a Work in Progress
 #            TensorRT | Untested | Need to test
-# 
-#      Goal: Easy button for deploying different models using different engines on DGX Spark
+#
+#      Goal: Easy button for deploying Nemotron models on homelab hardware
 # Reference: https://github.com/NVIDIA-NeMo/Nemotron/tree/main/usage-cookbook/Nemotron-3-Super/SparkDeploymentGuide
 
 set -euo pipefail
@@ -11,9 +11,37 @@ set -euo pipefail
 SCRIPT_NAME=$(basename "$0")
 ENGINE=""
 CHECKPOINT=""
+SELECTED_HOST=""
 
 REASONING_PARSER_URL="https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4/raw/main/super_v3_reasoning_parser.py"
 REASONING_PARSER_FILE="super_v3_reasoning_parser.py"
+
+# Host -> Nemotron model mapping
+declare -A HOST_MODEL
+HOST_MODEL=(
+  ["spark-e"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+  ["jarvis"]="nvidia/Nemotron-Elastic-12B"
+  ["wheatley"]="nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8"
+)
+
+declare -A HOST_SERVED_NAME
+HOST_SERVED_NAME=(
+  ["spark-e"]="nemotron-super"
+  ["jarvis"]="nemotron-elastic"
+  ["wheatley"]="nemotron-nano"
+)
+
+# spark-e needs CUDA 13.0 nightly; jarvis/wheatley use stable
+declare -A HOST_IMAGE
+HOST_IMAGE=(
+  ["spark-e"]="vllm/vllm-openai:cu130-nightly"
+  ["jarvis"]="nvcr.io/nvidia/vllm:26.03.post1-py3"
+  ["wheatley"]="nvcr.io/nvidia/vllm:26.03.post1-py3"
+)
+
+MODEL=""
+SERVED_MODEL_NAME=""
+VLLM_IMAGE_TO_USE=""
 
 usage() {
   cat <<EOF
@@ -30,51 +58,130 @@ Examples:
 EOF
 }
 
+select_model() {
+  local detected_host
+  detected_host=$(hostname -s)
+
+  if [[ -n "${HOST_MODEL[$detected_host]+_}" ]]; then
+    SELECTED_HOST="$detected_host"
+    echo "Detected host : $detected_host"
+    echo "Proposed model: ${HOST_MODEL[$detected_host]}"
+    echo ""
+    read -rp "Proceed with this model? [Y/n]: " confirm
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+      echo "Aborted."
+      exit 0
+    fi
+  else
+    echo "WARNING: hostname '$detected_host' is not in the host-model map." >&2
+    echo ""
+    echo "Known host profiles:"
+    local host_keys=("${!HOST_MODEL[@]}")
+    PS3="Select a profile (enter number): "
+    select CHOICE in "${host_keys[@]}" "Quit"; do
+      if [[ "$CHOICE" == "Quit" ]]; then
+        echo "Exiting."
+        exit 0
+      elif [[ -n "${HOST_MODEL[$CHOICE]+_}" ]]; then
+        SELECTED_HOST="$CHOICE"
+        echo "Selected: $CHOICE -> ${HOST_MODEL[$CHOICE]}"
+        break
+      else
+        echo "Invalid selection, try again."
+      fi
+    done
+  fi
+
+  MODEL="${HOST_MODEL[$SELECTED_HOST]}"
+  SERVED_MODEL_NAME="${HOST_SERVED_NAME[$SELECTED_HOST]}"
+  VLLM_IMAGE_TO_USE="${HOST_IMAGE[$SELECTED_HOST]}"
+}
+
 do_vllm() {
   if [[ -z "${HF_TOKEN:-}" ]]; then
     echo "ERROR: HF_TOKEN is not set — required for vLLM model pull" >&2
     exit 1
   fi
 
-  # Only download the reasoning parser if not already present
-  if [[ ! -f "$REASONING_PARSER_FILE" ]]; then
-    echo "Downloading reasoning parser..."
-    wget -q "$REASONING_PARSER_URL"
-  fi
+  select_model
 
-  docker run --rm -it --gpus all \
-    -e VLLM_NVFP4_GEMM_BACKEND=marlin \
-    -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 \
-    -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm \
-    -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
-    -e HF_TOKEN="$HF_TOKEN" \
-    -v ~/.cache/huggingface:/root/.cache/huggingface \
-    -v "$(pwd)/$REASONING_PARSER_FILE:/app/$REASONING_PARSER_FILE" \
-    -p 8000:8000 \
-    vllm/vllm-openai:cu130-nightly \
-      --model nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
-      --served-model-name nemotron-3-super \
-      --host 0.0.0.0 \
-      --port 8000 \
-      --async-scheduling \
-      --dtype auto \
-      --kv-cache-dtype fp8 \
-      --tensor-parallel-size 1 \
-      --pipeline-parallel-size 1 \
-      --data-parallel-size 1 \
-      --trust-remote-code \
-      --gpu-memory-utilization 0.90 \
-      --enable-chunked-prefill \
-      --max-num-seqs 4 \
-      --max-model-len 1000000 \
-      --moe-backend marlin \
-      --mamba_ssm_cache_dtype float32 \
-      --quantization fp4 \
-      --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}' \
-      --reasoning-parser-plugin "/app/$REASONING_PARSER_FILE" \
-      --reasoning-parser super_v3 \
-      --enable-auto-tool-choice \
-      --tool-call-parser qwen3_coder
+  local cmd=(
+    docker run --rm -it --gpus all
+    -e "HF_TOKEN=$HF_TOKEN"
+    -v "${HOME}/.cache/huggingface:/root/.cache/huggingface"
+    -p 8000:8000
+  )
+
+  case "$SELECTED_HOST" in
+    spark-e)
+      cmd+=(
+        -e VLLM_NVFP4_GEMM_BACKEND=marlin
+        -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1
+        -e VLLM_FLASHINFER_ALLREDUCE_BACKEND=trtllm
+        -e VLLM_USE_FLASHINFER_MOE_FP4=0
+      )
+      if [[ ! -f "$REASONING_PARSER_FILE" ]]; then
+        echo "Downloading reasoning parser..."
+        wget -q "$REASONING_PARSER_URL"
+      fi
+      cmd+=(-v "$(pwd)/$REASONING_PARSER_FILE:/app/$REASONING_PARSER_FILE")
+      ;;
+  esac
+
+  cmd+=("$VLLM_IMAGE_TO_USE")
+  cmd+=(
+    vllm serve "$MODEL"
+    --served-model-name "$SERVED_MODEL_NAME"
+    --host 0.0.0.0
+    --port 8000
+  )
+
+  case "$SELECTED_HOST" in
+    spark-e)
+      cmd+=(
+        --async-scheduling
+        --dtype auto
+        --kv-cache-dtype fp8
+        --tensor-parallel-size 1
+        --pipeline-parallel-size 1
+        --data-parallel-size 1
+        --trust-remote-code
+        --gpu-memory-utilization 0.90
+        --enable-chunked-prefill
+        --max-num-seqs 4
+        --max-model-len 1000000
+        --moe-backend marlin
+        --mamba_ssm_cache_dtype float32
+        --quantization fp4
+        --speculative_config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"triton"}'
+        --reasoning-parser-plugin "/app/$REASONING_PARSER_FILE"
+        --reasoning-parser super_v3
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+      )
+      ;;
+    jarvis)
+      cmd+=(
+        --quantization fp8
+        --max-model-len 32768
+        --gpu-memory-utilization 0.92
+        --enable-auto-tool-choice
+        --tool-call-parser hermes
+        --trust-remote-code
+        --enforce-eager
+      )
+      ;;
+    wheatley)
+      cmd+=(
+        --max-model-len 16384
+        --gpu-memory-utilization 0.90
+        --enable-auto-tool-choice
+        --tool-call-parser hermes
+      )
+      ;;
+  esac
+
+  "${cmd[@]}"
 }
 
 do_tensorrt() {
