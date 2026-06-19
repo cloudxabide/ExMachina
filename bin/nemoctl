@@ -112,7 +112,7 @@ do_vllm() {
     docker run --rm -it --gpus all
     -e "HF_TOKEN=$HF_TOKEN"
     -e "HF_HOME=/hf_cache"
-    -v "${HOME}/.cache/huggingface:/hf_cache"
+    -v "${HOME}/.cache/huggingface:/hf_cache:z"
     -p 8000:8000
   )
 
