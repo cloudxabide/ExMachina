@@ -1,6 +1,110 @@
 # Harvester GPU Research
 
 
+Good framing — you've got two related but distinct goals here:
+
+1. **GPU workloads must land on `nuc-03`** (hard requirement)
+2. **Non-GPU workloads should still run on `nuc-03`** (don't waste capacity)
+3. **GPU workloads should be preferred on `nuc-03` over non-GPU ones when resources are contested** (soft prioritization)
+
+Here's how I'd think through the Kubernetes scheduling primitives that address each:
+
+---
+
+## Goal 1: GPU workloads → `nuc-03` (hard)
+
+This is already mostly solved by the GPU Operator. Any pod requesting `nvidia.com/gpu: 1` will only schedule on a node that has that resource advertised. Since `nuc-03` is the only node with the GPU Operator labeling it, GPU pods are naturally constrained there — no extra nodeSelector or taint needed.
+
+**However**, if you want to be explicit and defensive (recommended), add a `nodeAffinity` to GPU workload specs:
+
+```yaml
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: feature.node.kubernetes.io/pci-10de.present
+          operator: In
+          values: ["true"]
+```
+
+This ensures that even if the GPU Operator label changes or a node is accidentally labeled, your intent is explicit in the workload manifest.
+
+---
+
+## Goal 2: Non-GPU workloads can still run on `nuc-03`
+
+Do **not** taint `nuc-03` with `NoSchedule` for non-GPU pods. A `NoSchedule` taint would exclude all pods without a matching toleration — that's the 33% waste you want to avoid.
+
+Instead, the default behavior (no taint) is exactly what you want. `nuc-03` participates in general scheduling like any other node. Non-GPU pods land there normally via the scheduler's bin-packing or spread logic.
+
+---
+
+## Goal 3: Prioritize GPU workloads over non-GPU ones on `nuc-03` when contested
+
+This is where it gets nuanced. Kubernetes has two relevant mechanisms:
+
+### Priority Classes (recommended)
+
+```yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: gpu-workload-high
+value: 1000
+globalDefault: false
+preemptionPolicy: PreemptLowerPriority
+description: "High priority for GPU-bound inference workloads"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: general-workload-normal
+value: 100
+globalDefault: true
+preemptionPolicy: PreemptLowerPriority
+```
+
+Assign `gpu-workload-high` to your vLLM/inference pods. If `nuc-03` is under memory or CPU pressure and a GPU pod needs to schedule, the scheduler will **preempt** lower-priority pods to make room. This is the closest thing to a "weight" that Kubernetes natively provides.
+
+### Node Affinity with Soft Preference (for non-GPU pods)
+
+You can also tell non-GPU workloads to *prefer* other nodes, making them soft-prefer away from `nuc-03`:
+
+```yaml
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 80
+      preference:
+        matchExpressions:
+        - key: feature.node.kubernetes.io/pci-10de.present
+          operator: DoesNotExist
+```
+
+This doesn't exclude non-GPU pods from `nuc-03` — it just biases the scheduler to place them on `nuc-01`/`nuc-02` first, leaving headroom on `nuc-03` for GPU work. The `weight` value (1–100) controls how strong that preference is relative to other scoring factors.
+
+---
+
+## The recommended combined approach
+
+| Mechanism | Applied to | Effect |
+|---|---|---|
+| `nvidia.com/gpu` resource request | GPU workloads | Hard constraint — only schedules on GPU node |
+| `nodeAffinity` (required) | GPU workloads | Explicit, defensive GPU-node pinning |
+| `PriorityClass: 1000` | GPU workloads | Preempts lower-priority pods if needed |
+| `nodeAffinity` (preferred, weight 80) | Non-GPU workloads | Soft bias away from `nuc-03` |
+| `PriorityClass: 100` (globalDefault) | Everything else | Lower preemption priority |
+
+This gives you the behavior you described: GPU pods always land on `nuc-03`, general workloads can still run there but are nudged toward the other two nodes, and if there's a conflict, GPU workloads win via preemption.
+
+---
+
+## One thing to watch
+
+Harvester's Kubernetes layer (RKE2) schedules both **VM workloads** (KubeVirt) and container workloads. KubeVirt VM pods are subject to the same scheduling rules, so if you have VMs running on `nuc-03`, they consume CPU/RAM that a GPU pod might need. You may want to assign a mid-range PriorityClass (say, 500) to critical VMs so they're not casually preempted, but still yield to GPU inference work.
+
+---
 
 Good set of results across official docs, practitioner blogs, and Harvester-specific material. Here's a curated breakdown organized by source quality and relevance to your setup:
 
