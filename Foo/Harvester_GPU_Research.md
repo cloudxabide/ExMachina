@@ -115,6 +115,7 @@ Harvester's Kubernetes layer (RKE2) schedules both **VM workloads** (KubeVirt) a
 <details>
 <summary>💡 Click to view my prompt </summary>
 Good set of results across official docs, practitioner blogs, and Harvester-specific material. Here's a curated breakdown organized by source quality and relevance to your setup:
+</summary>
 
 ---
 
@@ -185,4 +186,3 @@ Worth bookmarking for the ExMachina roadmap. At KubeCon Europe 2026, NVIDIA dona
 | dasroot.net (2026) | LLM-specific GPU scheduling, recent |
 | spheron.network (2026) | DRA / future direction — what replaces manual labels |
 
-</summary>
