@@ -2,9 +2,11 @@
 
 <details>
 <summary>💡 Click to view my prompt </summary>
-I have the 3-node Harvester cluster deployed - and only one node has a GPU (NVIDIA RTX 4060Ti) - I'd like to ensure that a workload that needs a GPU ends up on the correct node (nuc-03).  Now - I do NOT want to preclude other work from being scheduled on that node - that would potentially be a significant waste (up to 33%).  I am also curious if there is a way to provided weights or bias for certain workloads on a node, over others.
+I have the 3-node Harvester cluster deployed - and only one node has a GPU (NVIDIA RTX 4060Ti) - I'd like to ensure that a workload that needs a GPU ends up on the correct node (nuc-03).  Now - I do NOT want to preclude other work from being scheduled on that node - that would potentially be a significant waste (up to 33%).  I am also curious if there is a way to provide weights or bias for certain workloads on a node, over others.
 So, based on those inputs what are your thoughts
 </details>
+
+---
 
 Good framing — you've got two related but distinct goals here:
 
@@ -114,8 +116,11 @@ Harvester's Kubernetes layer (RKE2) schedules both **VM workloads** (KubeVirt) a
 
 <details>
 <summary>💡 Click to view my prompt </summary>
+can you help me find any publicly available documentation detailing how other folks have approached this challenge?
+</details>
+
+---
 Good set of results across official docs, practitioner blogs, and Harvester-specific material. Here's a curated breakdown organized by source quality and relevance to your setup:
-</summary>
 
 ---
 
