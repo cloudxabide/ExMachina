@@ -42,7 +42,8 @@ MODEL_KEYS=(
 )
 
 # Validates the host is ready to run NIM containers: docker group membership,
-# GPU-enabled container access, and NGC_API_KEY. Run standalone via `nimctl check-prereqs`.
+# GPU-enabled container access, NGC_API_KEY, and jq (needed by the image
+# architecture check). Run standalone via `nimctl check-prereqs`.
 check_prereqs() {
   local failed=false
 
@@ -51,6 +52,14 @@ check_prereqs() {
     echo "  OK: $USER is in the docker group."
   else
     echo "  FAIL: $USER is not in the docker group. Run: sudo usermod -aG docker $USER (then log out/in)."
+    failed=true
+  fi
+
+  echo "Checking for jq (used to verify image architecture compatibility)..."
+  if command -v jq >/dev/null 2>&1; then
+    echo "  OK: jq is installed."
+  else
+    echo "  FAIL: jq is not installed. Install it (e.g. apt install jq) so nimctl can verify image architecture."
     failed=true
   fi
 
@@ -83,6 +92,62 @@ if [[ "${1:-}" == "check-prereqs" ]]; then
   check_prereqs
   exit $?
 fi
+
+# Docker's own os/arch string for this host (e.g. "linux/arm64" on DGX Spark,
+# "linux/amd64" on typical x86 boxes) — matches the platform strings reported
+# by `docker manifest inspect`, so no manual uname->docker-arch mapping needed.
+host_platform() {
+  docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null
+}
+
+# Confirms the selected NGC image actually publishes a build for this host's
+# architecture before we pull/run it. Many NIM images are single-arch (e.g.
+# nvidia/llama-3.1-nemotron-70b-instruct is amd64-only, with no arm64 build for
+# DGX Spark) — running the wrong arch either fails the pull outright or, under
+# emulation, silently loses GPU passthrough.
+#
+# `docker buildx imagetools inspect` only prints a Platform line for multi-arch
+# manifest lists — single-arch (schema2) manifests report no platform at all, so
+# it can't be used here. `docker manifest inspect --verbose` resolves the
+# platform for both single- and multi-arch images by reading the image config,
+# hence its use below. Requires jq. Fails open (warns, continues) if the
+# manifest can't be inspected; fails closed (blocks) on a confirmed mismatch.
+check_image_arch() {
+  local image="$1" host_plat platforms
+
+  host_plat="$(host_platform)"
+  if [[ -z "$host_plat" ]]; then
+    echo "WARNING: could not determine Docker host platform; skipping architecture check for $image."
+    return 0
+  fi
+
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "WARNING: jq not installed; skipping architecture check for $image."
+    echo "  Verify manually with: docker manifest inspect --verbose $image"
+    return 0
+  fi
+
+  echo "Checking published architectures for $image..."
+  platforms=$(DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect --verbose "$image" 2>/dev/null \
+    | jq -r '[.. | objects | select(has("architecture") and has("os")) | select(.architecture != "unknown")] | .[] | "\(.os)/\(.architecture)"' \
+    | sort -u)
+
+  if [[ -z "$platforms" ]]; then
+    echo "WARNING: could not read manifest for $image (registry query failed); skipping architecture check."
+    return 0
+  fi
+
+  echo "  Available: $(echo "$platforms" | tr '\n' ' ')"
+  if echo "$platforms" | grep -qx "$host_plat"; then
+    echo "  OK: $image publishes a $host_plat variant."
+    return 0
+  fi
+
+  echo "ERROR: $image has no $host_plat build."
+  echo "  Host platform: $host_plat"
+  echo "  Image publishes: $(echo "$platforms" | tr '\n' ' ')"
+  return 1
+}
 
 echo "Available NIM models:"
 PS3="Select a model (enter number): "
@@ -124,6 +189,12 @@ fi
 echo "Logging in to nvcr.io..."
 if ! echo "$NGC_API_KEY" | docker login nvcr.io --username '$oauthtoken' --password-stdin; then
   echo "ERROR: docker login to nvcr.io failed. Check your NGC_API_KEY."
+  exit 1
+fi
+
+# Confirm the selected image actually publishes a build for this host's architecture
+if ! check_image_arch "$IMG_NAME"; then
+  echo "Aborting: $IMG_NAME is not compatible with this host's architecture."
   exit 1
 fi
 
