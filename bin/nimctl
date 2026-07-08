@@ -41,6 +41,49 @@ MODEL_KEYS=(
   "nemotron-3-8b"
 )
 
+# Validates the host is ready to run NIM containers: docker group membership,
+# GPU-enabled container access, and NGC_API_KEY. Run standalone via `nimctl check-prereqs`.
+check_prereqs() {
+  local failed=false
+
+  echo "Checking docker group membership..."
+  if id -nG "$USER" | tr ' ' '\n' | grep -qx docker; then
+    echo "  OK: $USER is in the docker group."
+  else
+    echo "  FAIL: $USER is not in the docker group. Run: sudo usermod -aG docker $USER (then log out/in)."
+    failed=true
+  fi
+
+  echo "Checking GPU access via Docker (nvidia-smi in a CUDA container)..."
+  if docker run --rm --gpus all nvcr.io/nvidia/cuda:13.0.1-devel-ubuntu24.04 nvidia-smi; then
+    echo "  OK: docker run --gpus all can reach the GPU."
+  else
+    echo "  FAIL: docker run --gpus all failed. Check the NVIDIA Container Toolkit install and that you're logged in to nvcr.io."
+    failed=true
+  fi
+
+  echo "Checking NGC_API_KEY..."
+  if [[ -n "${NGC_API_KEY:-}" ]]; then
+    echo "  OK: NGC_API_KEY is set."
+  else
+    echo "  FAIL: NGC_API_KEY is not set. Export it before running this script."
+    failed=true
+  fi
+
+  echo ""
+  if [[ "$failed" == true ]]; then
+    echo "Prereq validation failed."
+    return 1
+  fi
+  echo "All prereqs satisfied."
+  return 0
+}
+
+if [[ "${1:-}" == "check-prereqs" ]]; then
+  check_prereqs
+  exit $?
+fi
+
 echo "Available NIM models:"
 PS3="Select a model (enter number): "
 select CHOICE in "${MODEL_KEYS[@]}" "Quit"; do
