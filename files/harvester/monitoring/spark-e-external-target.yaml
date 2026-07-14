@@ -1,0 +1,52 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-e-external
+  namespace: cattle-monitoring-system
+  labels:
+    app: spark-e-external
+spec:
+  ports:
+    - name: vllm
+      port: 8000
+      targetPort: 8000
+    - name: node-exporter
+      port: 9100
+      targetPort: 9100
+---
+# NOTE: this cluster's rancher-monitoring (Prometheus Operator) generates
+# ServiceMonitor scrape configs with `role: endpoints` (Kubernetes SD), not
+# `role: endpointslice` -- confirmed by inspecting the generated config in
+# secret/prometheus-rancher-monitoring-prometheus. An EndpointSlice here is
+# invisible to that discovery role, so a plain v1 Endpoints object is
+# required even though the API server flags it as deprecated in 1.33+.
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: spark-e-external
+  namespace: cattle-monitoring-system
+subsets:
+  - addresses:
+      - ip: 10.10.12.251
+    ports:
+      - name: vllm
+        port: 8000
+      - name: node-exporter
+        port: 9100
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: spark-e-external
+  namespace: cattle-monitoring-system
+spec:
+  selector:
+    matchLabels:
+      app: spark-e-external
+  endpoints:
+    - port: vllm
+      path: /metrics
+      interval: 15s
+    - port: node-exporter
+      path: /metrics
+      interval: 15s

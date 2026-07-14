@@ -155,6 +155,29 @@ CronJob lm-eval → vLLM API → results JSON → MLflow (benchmark history)
 
 ---
 
+### DGX Spark Monitoring: extend Harvester's rancher-monitoring, not a new stack on spark-e
+**Date:** 2026-07-13 — **Deployed:** 2026-07-14
+
+spark-e (DGX Spark) is dedicated inference compute; the Harvester cluster already runs a
+full Prometheus Operator stack (`rancher-monitoring` chart, `cattle-monitoring-system`
+namespace) with a Grafana dashboard-sidecar pattern. Rather than duplicate
+Prometheus/Grafana directly on the DGX (the pattern shown in third-party DGX Spark
+walkthroughs), spark-e is registered as an external scrape target — `Service` +
+`Endpoints` + `ServiceMonitor` — against the existing Harvester Prometheus.
+
+GPU power/utilization metrics come from a `nvidia-smi`-based textfile exporter rather
+than containerized DCGM, since the standard DCGM exporter image is AMD64-only and
+doesn't run on DGX Spark's ARM64 (Grace-Blackwell/GB10) host.
+
+Full implementation runbook: [`DGX_Spark_Monitoring.md`](DGX_Spark_Monitoring.md)
+
+**Manifests:** `files/harvester/monitoring/`
+- `spark-e-external-target.yaml` — Service/Endpoints/ServiceMonitor for the off-cluster DGX
+- `vllm-grafana-dashboard.yaml`, `node-exporter-full-grafana-dashboard.yaml` — imported community dashboards (Grafana.com IDs 25263, 1860)
+- `cost-comparison-dashboard.yaml` — custom Stat panels comparing DGX electricity cost to reference hyperscaler/API rates
+
+---
+
 ## Related Documents
 
 | Document | Purpose |
@@ -162,6 +185,7 @@ CronJob lm-eval → vLLM API → results JSON → MLflow (benchmark history)
 | [`Agent_Roster.md`](Agent_Roster.md) | NemoClaw crew definitions — roles, responsibilities, artifact ownership |
 | [`Security.md`](Security.md) | Zero-trust security architecture — threat model, controls, open decisions |
 | [`CLAUDE.md`](CLAUDE.md) | Node inventory, hardware stack, project conventions |
+| [`DGX_Spark_Monitoring.md`](DGX_Spark_Monitoring.md) | Harvester Grafana + spark-e metrics + cost-comparison dashboard runbook |
 
 ---
 
