@@ -11,34 +11,40 @@ set -euo pipefail
 # meta/llama-3.1-8b-instruct-dgx-spark << no tool support, apparently
 # openai/nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4
 #
+# Every entry below has been confirmed (via `docker manifest inspect --verbose`
+# against nvcr.io) to publish a linux/arm64 build, required for DGX Spark.
 declare -A NIM_MODELS=(
-  ["llama-3.1-8b-instruct"]="meta/llama-3.1-8b-instruct-dgx-spark:1.8.4"
-  ["llama-3.1-nemotron-70b"]="nvidia/llama-3.1-nemotron-70b-instruct:1.2"
+  ["llama-3.1-8b-instruct"]="meta/llama-3.1-8b-instruct-dgx-spark:1.0.0-variant"
   ["nemotron-nano-9b"]="nvidia/nvidia-nemotron-nano-9b-v2-dgx-spark:1.0.0-variant"
-  ["nemotron-3-8b"]="nvidia/nemotron-3:8b-instruct"
+  ["qwen3-32b"]="qwen/qwen3-32b-dgx-spark:1.1.0-variant"
 )
 
+# Kept for visibility — confirmed unusable on this host, not just untested.
 declare -A MODELS_THAT_WONT_WORK=(
   ["llama-3.3-70b-instruct"]="meta/llama-3.3-70b-instruct"
   ["nemotron-4-340b (requires multi-GPU)"]="nvidia/nemotron-4-340b-instruct:1.1.2"
+  ["llama-3.1-nemotron-70b (amd64-only, no arm64 build)"]="nvidia/llama-3.1-nemotron-70b-instruct:1.2"
+  ["nemotron-3-8b (broken image path — repo does not resolve)"]="nvidia/nemotron-3:8b-instruct"
+  ["qwen3-32b non-dgx-spark tag (amd64-only — use qwen/qwen3-32b-dgx-spark instead)"]="qwen/qwen3-32b:1.0.0"
 )
 
 # Model name as NIM serves it (used in litellm config — may differ from the NGC image path)
 declare -A NIM_SERVER_NAMES=(
   ["llama-3.3-70b-instruct"]="meta/llama-3.3-70b-instruct"
   ["llama-3.1-8b-instruct"]="meta/llama-3.1-8b-instruct"
-  ["llama-3.1-nemotron-70b"]="nvidia/llama-3.1-nemotron-70b-instruct"
   ["nemotron-nano-9b"]="nvidia/nvidia-nemotron-nano-9b-v2"
-  ["nemotron-3-8b"]="nvidia/nemotron-3-8b-instruct"
+  ["qwen3-32b"]="qwen/qwen3-32b"
   ["nemotron-4-340b (requires multi-GPU)"]="nvidia/nemotron-4-340b-instruct"
+  ["llama-3.1-nemotron-70b (amd64-only, no arm64 build)"]="nvidia/llama-3.1-nemotron-70b-instruct"
+  ["nemotron-3-8b (broken image path — repo does not resolve)"]="nvidia/nemotron-3-8b-instruct"
+  ["qwen3-32b non-dgx-spark tag (amd64-only — use qwen/qwen3-32b-dgx-spark instead)"]="qwen/qwen3-32b"
 )
 
 # Explicit ordering so the menu is stable across runs
 MODEL_KEYS=(
   "llama-3.1-8b-instruct"
-  "llama-3.1-nemotron-70b"
   "nemotron-nano-9b"
-  "nemotron-3-8b"
+  "qwen3-32b"
 )
 
 # Validates the host is ready to run NIM containers: docker group membership,
