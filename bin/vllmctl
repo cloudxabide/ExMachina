@@ -24,6 +24,7 @@ VLLM_MODELS=(
   # large — DGX Spark (128 GB UMA, NVFP4 tensor cores)
   ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+  ["qwen3.6-27b"]="nvidia/Qwen3.6-27B-NVFP4"
   ["llama-3.3-70b"]="unsloth/Llama-3.3-70B-Instruct-FP8-Dynamic"
   ["gemma-4-26b"]="google/gemma-4-26B-A4B-it"
   # medium — RTX 4060 Ti 16 GB (jarvis) and up
@@ -42,6 +43,7 @@ VLLM_MODELS=(
 MODEL_KEYS=(
   "nemotron-super-120b"
   "nemotron-nano-30b"
+  "qwen3.6-27b"
   "llama-3.3-70b"
   "gemma-4-26b"
   "nemotron-elastic-12b"
@@ -59,6 +61,7 @@ declare -A MODEL_MIN_PROFILE
 MODEL_MIN_PROFILE=(
   ["nemotron-super-120b"]="large"
   ["nemotron-nano-30b"]="large"
+  ["qwen3.6-27b"]="large"
   ["llama-3.3-70b"]="large"
   ["gemma-4-26b"]="large"
   ["nemotron-elastic-12b"]="medium"
@@ -76,6 +79,7 @@ declare -A MODEL_EXTRA_ENVS
 MODEL_EXTRA_ENVS=(
   ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_USE_FLASHINFER_MOE_FP4=0"
   ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
+  ["qwen3.6-27b"]=""
   ["llama-3.3-70b"]=""
   ["gemma-4-26b"]=""
   ["nemotron-elastic-12b"]=""
@@ -94,6 +98,7 @@ MODEL_SERVE_ARGS=(
   # large
   ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
   ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
+  ["qwen3.6-27b"]="--quantization modelopt --max-model-len 262144 --reasoning-parser qwen3 --gpu-memory-utilization 0.90"
   ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["gemma-4-26b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --limit-mm-per-prompt {\"image\":150,\"video\":1,\"audio\":0} --enable-prefix-caching"
   # medium — conservative context so KV cache fits in 16 GB
