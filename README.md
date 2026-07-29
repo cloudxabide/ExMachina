@@ -18,6 +18,8 @@
 
 ---
 
+Joe was here!
+
 A homelab-scale agentic AI stack built on sovereign hardware — no cloud, no vendor lock-in, nothing leaves the firewall. A 120B parameter model runs on a DGX Spark as the cognitive core, a multi-agent NemoClaw crew orchestrates tasks across the infrastructure, a live RAG layer keeps the model grounded in real operational state, and a physical robot acts as a first-class edge agent in the real world.
 
 This is not a chat wrapper. It is a goal-directed agentic system with tools, perception, and physical reach.
