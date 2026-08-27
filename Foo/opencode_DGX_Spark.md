@@ -100,39 +100,40 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
 ```
 
 
-● It ran cleanly: 0 failed requests, ~184 tok/s output throughput at concurrency 4, ~19.8ms/token (≈50 tok/s per stream), TTFT ~350ms median.
+>[!NOTE]
+> ● It ran cleanly: 0 failed requests, ~184 tok/s output throughput at concurrency 4, ~19.8ms/token (≈50 tok/s per stream), TTFT ~350ms median.
+> 
+>  Results at concurrency 4
+>
+>  ┌───────────────────────────┬──────────────────────────────┐
+>  │          Metric           │            Value             │
+>  ├───────────────────────────┼──────────────────────────────┤
+>  │ Output throughput         │ 183.7 tok/s                  │
+>  ├───────────────────────────┼──────────────────────────────┤
+>  │ Total throughput (in+out) │ 558.6 tok/s                  │
+>  ├───────────────────────────┼──────────────────────────────┤
+>  │ Mean TTFT                 │ 353 ms                       │
+>  ├───────────────────────────┼──────────────────────────────┤
+>  │ Mean TPOT (per-token)     │ 19.8 ms (~50.5 tok/s/stream) │
+>  └───────────────────────────┴──────────────────────────────┘
+>
+>  That per-stream ~50 tok/s roughly matches the "20-30 tok/s" the HF discussion mentioned for a less-tuned config, so marlin MoE + fp8 KV cache is
+>  doing well here.
+>
+>  Suggestions for going further
+>
+>  1. Sweep concurrency to find where throughput saturates and TTFT starts degrading — run the same command at --max-concurrency 1, 2, 8, 16, 32 and
+>  compare. That tells you the practical max concurrent users before latency suffers.
+>  2. Match your real workload shape — swap --random-input-len/--random-output-len for numbers closer to what you'll actually send (e.g. short chat
+>  turns vs. long-context RAG).
+>  3. Realistic conversational traffic: use --dataset-name sharegpt instead of random for more natural prompt/response distributions.
+>  4. Since you have a 262K context window, worth a long-context test: --random-input-len 32000 --random-output-len 512 to see how TTFT scales with
+>  prefill length.
+>  5. Add --save-detailed if you want per-request timing dumped to the JSON for deeper analysis (e.g. plotting TTFT distribution).
+>
+> Here's the command you can run yourself anytime — no need for me to be involved:
 
-  Results at concurrency 4
-
-  ┌───────────────────────────┬──────────────────────────────┐
-  │          Metric           │            Value             │
-  ├───────────────────────────┼──────────────────────────────┤
-  │ Output throughput         │ 183.7 tok/s                  │
-  ├───────────────────────────┼──────────────────────────────┤
-  │ Total throughput (in+out) │ 558.6 tok/s                  │
-  ├───────────────────────────┼──────────────────────────────┤
-  │ Mean TTFT                 │ 353 ms                       │
-  ├───────────────────────────┼──────────────────────────────┤
-  │ Mean TPOT (per-token)     │ 19.8 ms (~50.5 tok/s/stream) │
-  └───────────────────────────┴──────────────────────────────┘
-
-  That per-stream ~50 tok/s roughly matches the "20-30 tok/s" the HF discussion mentioned for a less-tuned config, so marlin MoE + fp8 KV cache is
-  doing well here.
-
-  Suggestions for going further
-
-  1. Sweep concurrency to find where throughput saturates and TTFT starts degrading — run the same command at --max-concurrency 1, 2, 8, 16, 32 and
-  compare. That tells you the practical max concurrent users before latency suffers.
-  2. Match your real workload shape — swap --random-input-len/--random-output-len for numbers closer to what you'll actually send (e.g. short chat
-  turns vs. long-context RAG).
-  3. Realistic conversational traffic: use --dataset-name sharegpt instead of random for more natural prompt/response distributions.
-  4. Since you have a 262K context window, worth a long-context test: --random-input-len 32000 --random-output-len 512 to see how TTFT scales with
-  prefill length.
-  5. Add --save-detailed if you want per-request timing dumped to the JSON for deeper analysis (e.g. plotting TTFT distribution).
-
-
- Here's the command you can run yourself anytime — no need for me to be involved:
-
+```
   docker exec qwen36-35b-a3b vllm bench serve \
     --backend openai-chat \
     --endpoint /v1/chat/completions \
@@ -144,6 +145,7 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
     --num-prompts 50 \
     --max-concurrency 4 \
     --save-result --result-dir /tmp --result-filename bench_c4.json
+```
 
   Notes on the knobs you'll want to change:
   - --max-concurrency N — simulate N simultaneous users (the main thing to vary)
