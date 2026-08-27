@@ -4,6 +4,8 @@ There are seemingly no end to the ways one may run an LLM and connect opencode
 
 I have landed here - and it seems to work rather well
 
+## Update your Opencode configuration
+Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
 ```
     "DGX-VLLM": {
       "npm": "@ai-sdk/openai-compatible",
@@ -31,9 +33,9 @@ I have landed here - and it seems to work rather well
         }
       }
     },
-
 ```
 
+## Start vLLM and run nvidia/Qwen3.6-35B-A3B-NVFP4
 ```
   docker run --gpus all --ipc=host -d --name qwen36-35b-a3b \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
@@ -54,7 +56,9 @@ I have landed here - and it seems to work rather well
     --tool-call-parser qwen3_coder
 ```
 
-  Environment: DGX Spark, GB10 GPU (Blackwell, SM 12.1), CUDA 13.0, driver 580.173.02
+
+>[NOTE!]
+>  Environment: DGX Spark, GB10 GPU (Blackwell, SM 12.1), CUDA 13.0, driver 580.173.02
 
   Docker image: vllm/vllm-openai:latest (was v0.28.0 as of this session)
 
