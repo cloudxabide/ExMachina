@@ -59,21 +59,21 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
 
 >[!NOTE]
 >  Environment: DGX Spark, GB10 GPU (Blackwell, SM 12.1), CUDA 13.0, driver 580.173.02
-
-  Docker image: vllm/vllm-openai:latest (was v0.28.0 as of this session)
-
-  Why these specific flags (worth keeping in the doc so a future rebuild doesn't have to rediscover it):
-  - --moe-backend marlin — the only NVFP4 MoE kernel that actually works on GB10; flashinfer_cutlass targets datacenter Blackwell (SM 10.0) and rejects this
-  checkpoint's quant layout on GB10, triton isn't a valid NVFP4 MoE backend at all
-  - CUTE_DSL_ARCH=sm_121a / FLASHINFER_DISABLE_VERSION_CHECK=1 — required for GB10's SM 12.1 to be recognized correctly by the FlashInfer/CUTLASS DSL layer
-  - vllm/vllm-openai:latest (not cu130-nightly) — the nightly's older vLLM (v0.19.2) has a Qwen3.5-MoE weight loader that doesn't match this checkpoint's expert
-  key names (KeyError: w2_input_scale)
-  - --tool-call-parser qwen3_coder — this model emits <function=name><parameter=x>... XML-style tool calls; hermes (JSON-style) and qwen3_xml don't parse it into
-  tool_calls correctly, only qwen3_coder does
-  - --reasoning-parser qwen3 — this is a thinking model; without it the <think> trace isn't separated from content/reasoning, and callers should budget
-  max_tokens generously (≥500-1000) since the reasoning trace itself consumes tokens before any answer or tool call is emitted
-
-  Serving endpoint: http://localhost:8000/v1 (OpenAI-compatible: chat completions, tool calling via tools/tool_choice, up to 262K context)
+>
+>  Docker image: vllm/vllm-openai:latest (was v0.28.0 as of this session)
+>
+>  Why these specific flags (worth keeping in the doc so a future rebuild doesn't have to rediscover it):
+>  - --moe-backend marlin — the only NVFP4 MoE kernel that actually works on GB10; flashinfer_cutlass targets datacenter Blackwell (SM 10.0) and rejects this
+>  checkpoint's quant layout on GB10, triton isn't a valid NVFP4 MoE backend at all
+>  - CUTE_DSL_ARCH=sm_121a / FLASHINFER_DISABLE_VERSION_CHECK=1 — required for GB10's SM 12.1 to be recognized correctly by the FlashInfer/CUTLASS DSL layer
+>  - vllm/vllm-openai:latest (not cu130-nightly) — the nightly's older vLLM (v0.19.2) has a Qwen3.5-MoE weight loader that doesn't match this checkpoint's expert
+>  key names (KeyError: w2_input_scale)
+>  - --tool-call-parser qwen3_coder — this model emits <function=name><parameter=x>... XML-style tool calls; hermes (JSON-style) and qwen3_xml don't parse it into
+>  tool_calls correctly, only qwen3_coder does
+>  - --reasoning-parser qwen3 — this is a thinking model; without it the <think> trace isn't separated from content/reasoning, and callers should budget
+>  max_tokens generously (≥500-1000) since the reasoning trace itself consumes tokens before any answer or tool call is emitted
+>
+>  Serving endpoint: http://localhost:8000/v1 (OpenAI-compatible: chat completions, tool calling via tools/tool_choice, up to 262K context)
 
 
 ## THIS WAS CLOSE, but did not work
