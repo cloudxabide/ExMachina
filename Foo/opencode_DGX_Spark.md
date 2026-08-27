@@ -57,7 +57,7 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
 ```
 
 
->[NOTE!]
+>[!NOTE]
 >  Environment: DGX Spark, GB10 GPU (Blackwell, SM 12.1), CUDA 13.0, driver 580.173.02
 
   Docker image: vllm/vllm-openai:latest (was v0.28.0 as of this session)
@@ -96,7 +96,6 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
     --reasoning-parser qwen3 \
     --enable-auto-tool-choice \
     --tool-call-parser qwen3_coder
-  
 #  --tool-call-parser hermes
 ```
 
