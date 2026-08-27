@@ -56,7 +56,6 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
     --tool-call-parser qwen3_coder
 ```
 
-
 >[!NOTE]
 >  Environment: DGX Spark, GB10 GPU (Blackwell, SM 12.1), CUDA 13.0, driver 580.173.02
 >
@@ -147,14 +146,17 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
     --save-result --result-dir /tmp --result-filename bench_c4.json
 ```
 
-  Notes on the knobs you'll want to change:
-  - --max-concurrency N — simulate N simultaneous users (the main thing to vary)
-  - --num-prompts — total requests sent; keep it a multiple of concurrency, roughly 10x concurrency so the run is long enough to be stable
-  - --random-input-len / --random-output-len — shape of prompt/response to match your real use case
-  - --result-filename — change per run so you can diff results later; files land in /tmp inside the container (add -v mount if you want them on host)
 
-  Now running the concurrency sweep (1, 2, 4, 8, 16, 32) in the background — I'll summarize the throughput/latency curve when it's done.
+>[!NOTE]
+>  Notes on the knobs you'll want to change:
+>  - --max-concurrency N — simulate N simultaneous users (the main thing to vary)
+>  - --num-prompts — total requests sent; keep it a multiple of concurrency, roughly 10x concurrency so the run is long enough to be stable
+>  - --random-input-len / --random-output-len — shape of prompt/response to match your real use case
+>  - --result-filename — change per run so you can diff results later; files land in /tmp inside the container (add -v mount if you want them on host)
+>
+>  Now running the concurrency sweep (1, 2, 4, 8, 16, 32) in the background — I'll summarize the throughput/latency curve when it's done.
 
+```
    for c in 1 2 4 8 16 32; do
      echo "=== concurrency $c ==="
      n=$((c * 10))
@@ -170,7 +172,9 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
        --max-concurrency "$c" \
        --save-result --result-dir /tmp --result-filename "bench_c${c}.json" 2>&1 | grep -A30 "Serving Benchmark Result"
    done
+```
 
+<pre>
 ● All 620 requests across the sweep succeeded, 0 failures. Here's the full curve:
 
   ┌─────────────┬──────────────┬─────────────┬───────────┬───────────┬──────────────────┬──────────┐
@@ -201,3 +205,4 @@ Add the nvidia/Qwen3.6-35B-A3B-NVFP4 stanza to ~/.config/opencode/opencode.json
   capturing most of the achievable throughput. Push past 16 only if you're optimizing for batch/offline throughput and don't care about individual response
   latency.
 
+</pre>
