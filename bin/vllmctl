@@ -24,6 +24,7 @@ VLLM_MODELS=(
   # large — DGX Spark (128 GB UMA, NVFP4 tensor cores)
   ["nemotron-super-120b"]="nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
   ["nemotron-nano-30b"]="nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"
+  ["nemotron-lightning-30b"]="nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
   ["qwen3.6-27b"]="nvidia/Qwen3.6-27B-NVFP4"
   ["llama-3.3-70b"]="unsloth/Llama-3.3-70B-Instruct-FP8-Dynamic"
   ["gemma-4-26b"]="google/gemma-4-26B-A4B-it"
@@ -43,6 +44,7 @@ VLLM_MODELS=(
 MODEL_KEYS=(
   "nemotron-super-120b"
   "nemotron-nano-30b"
+  "nemotron-lightning-30b"
   "qwen3.6-27b"
   "llama-3.3-70b"
   "gemma-4-26b"
@@ -61,6 +63,7 @@ declare -A MODEL_MIN_PROFILE
 MODEL_MIN_PROFILE=(
   ["nemotron-super-120b"]="large"
   ["nemotron-nano-30b"]="large"
+  ["nemotron-lightning-30b"]="large"
   ["qwen3.6-27b"]="large"
   ["llama-3.3-70b"]="large"
   ["gemma-4-26b"]="large"
@@ -79,6 +82,7 @@ declare -A MODEL_EXTRA_ENVS
 MODEL_EXTRA_ENVS=(
   ["nemotron-super-120b"]="-e VLLM_NVFP4_GEMM_BACKEND=marlin -e VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 -e VLLM_USE_FLASHINFER_MOE_FP4=0"
   ["nemotron-nano-30b"]="-e VLLM_FLASHINFER_MOE_BACKEND=latency"
+  ["nemotron-lightning-30b"]=""
   ["qwen3.6-27b"]=""
   ["llama-3.3-70b"]=""
   ["gemma-4-26b"]=""
@@ -98,6 +102,8 @@ MODEL_SERVE_ARGS=(
   # large
   ["nemotron-super-120b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --trust-remote-code"
   ["nemotron-nano-30b"]="--quantization modelopt_fp4 --kv-cache-dtype fp8 --trust-remote-code --max-model-len 131072 --gpu-memory-utilization 0.85"
+  # Flags from the Kubesimplify DGX Spark run (see Foo/nemotron-lightning-investigation.md); DSpark draft model for speculative decoding
+  ["nemotron-lightning-30b"]="--served-model-name nemotron-3.5-lightning --trust-remote-code --moe-backend marlin --kv-cache-dtype fp8 --max-model-len 65536 --enable-prefix-caching --speculative_config.method dspark --speculative_config.model nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark --speculative_config.num_speculative_tokens 3 --mamba-backend flashinfer --mamba-cache-mode align --gpu-memory-utilization 0.80 --reasoning-parser nemotron_v3 --enable-auto-tool-choice --tool-call-parser qwen3_coder"
   ["qwen3.6-27b"]="--quantization modelopt --max-model-len 262144 --reasoning-parser qwen3 --gpu-memory-utilization 0.90"
   ["llama-3.3-70b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --enable-auto-tool-choice --tool-call-parser llama3_json"
   ["gemma-4-26b"]="--max-model-len 32768 --gpu-memory-utilization 0.90 --limit-mm-per-prompt {\"image\":150,\"video\":1,\"audio\":0} --enable-prefix-caching"
@@ -111,6 +117,13 @@ MODEL_SERVE_ARGS=(
   ["deepseek-r1-1.5b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1"
   ["qwen2.5-1.5b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-auto-tool-choice --tool-call-parser hermes"
   ["llama-3.2-1b"]="--max-model-len 4096 --gpu-memory-utilization 0.85 --max-num-seqs 1 --enable-auto-tool-choice --tool-call-parser llama3_json"
+)
+
+# Per-model container image overrides (default: $VLLM_IMAGE).
+# Lightning's hybrid Mamba-2 path needs vLLM >= 0.27.1, newer than any NGC vllm image so far.
+declare -A MODEL_IMAGE
+MODEL_IMAGE=(
+  ["nemotron-lightning-30b"]="${VLLM_LIGHTNING_IMAGE:-vllm/vllm-openai:v0.27.1}"
 )
 
 DRY_RUN=false
@@ -213,6 +226,7 @@ select_model() {
       HF_MODEL_ID="${VLLM_MODELS[$CHOICE]}"
       EXTRA_ENVS="${MODEL_EXTRA_ENVS[$CHOICE]}"
       SERVE_ARGS="${MODEL_SERVE_ARGS[$CHOICE]}"
+      MODEL_VLLM_IMAGE="${MODEL_IMAGE[$CHOICE]:-$VLLM_IMAGE}"
       echo "Selected: $CHOICE -> $HF_MODEL_ID"
       break
     else
@@ -409,10 +423,16 @@ do_start() {
     read -ra _extra_envs <<< "$EXTRA_ENVS"
     vllm_cmd+=("${_extra_envs[@]}")
   fi
+  vllm_cmd+=(-v "$HF_CACHE:/root/.cache/huggingface")
+  # Upstream vllm/vllm-openai images have their own entrypoint; force "vllm" so
+  # "serve <model>" works the same as with the NGC image.
+  if [[ "$MODEL_VLLM_IMAGE" == vllm/vllm-openai* ]]; then
+    vllm_cmd+=(--entrypoint vllm "$MODEL_VLLM_IMAGE")
+  else
+    vllm_cmd+=("$MODEL_VLLM_IMAGE" vllm)
+  fi
   vllm_cmd+=(
-    -v "$HF_CACHE:/root/.cache/huggingface"
-    "$VLLM_IMAGE"
-    vllm serve "$HF_MODEL_ID"
+    serve "$HF_MODEL_ID"
     --host 0.0.0.0
     --port "$VLLM_PORT"
   )
