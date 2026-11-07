@@ -19,6 +19,11 @@ Commands:
   update         Pull the latest image and restart the container
   update-models  Pull the latest version of each installed Ollama model
   self-update  Pull the latest version of this script from git
+
+Examples:
+  $(basename "$0") self-update
+  $(basename "$0") update
+  $(basename "$0") update-models
 EOF
   exit 1
 }
