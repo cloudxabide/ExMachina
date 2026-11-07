@@ -180,7 +180,8 @@ do_self_update() {
   else
     echo "Fetching latest $(basename "$0") from GitHub..."
     local tmp tmp_sum
-    tmp=$(mktemp)
+    # Temp file sits next to the script so the final mv is an atomic rename
+    tmp=$(mktemp "${script_path}.XXXXXX")
     tmp_sum=$(mktemp)
     if ! curl -fsSL "$SCRIPT_RAW_URL" -o "$tmp"; then
       echo "Error: download failed from $SCRIPT_RAW_URL" >&2
@@ -197,10 +198,14 @@ do_self_update() {
       echo "Error: checksum mismatch (expected $expected, got $actual)" >&2
       rm -f "$tmp" "$tmp_sum"; exit 1
     fi
-    chmod +x "$tmp"
-    cp "$tmp" "$script_path"
-    rm -f "$tmp" "$tmp_sum"
+    chmod 755 "$tmp"
+    # mv (not cp): replace the file instead of rewriting it in place, so the
+    # running bash keeps reading the old copy instead of a changed file
+    mv -f "$tmp" "$script_path"
+    rm -f "$tmp_sum"
     echo "$(basename "$0") updated (checksum verified)."
+    # Exit now so bash never reads further into the replaced script
+    exit 0
   fi
 }
 
