@@ -25,6 +25,7 @@ Domain: `homelab.kubernerdes.com` | SSH key: `~/.ssh/id_ecdsa-kubernerdes`
 | Hostname | IP | User | Role |
 |----------|----|------|------|
 | nuc-00 | 10.10.12.10 | mansible | Harvester hub |
+| nuc-00-02 | 10.10.12.9 | mansible | openSUSE Leap 15.6 — SSH hardened (no root, keys only; see `files/nuc-00-02/`) |
 | nuc-01 | 10.10.12.101 | rancher | Harvester worker |
 | nuc-02 | 10.10.12.102 | rancher | Harvester worker |
 | nuc-03 | 10.10.12.103 | rancher | Harvester worker |

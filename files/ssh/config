@@ -1,7 +1,17 @@
-Host spark-e spark-e.homelab.kubernerdes.com
+# spark-e has two identities, selected by the name you connect with:
+#   ssh spark-e.homelab.kubernerdes.com  -> mansible (shared homelab key)
+#   ssh 10.10.12.251 / ssh spark-e       -> jradtke  (key set up by the DGX Spark tooling)
+Host spark-e.homelab.kubernerdes.com
     HostName 10.10.12.251
     User mansible
     IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+    IdentitiesOnly yes
+
+Host 10.10.12.251 spark-e
+    HostName 10.10.12.251
+    User jradtke
+    IdentityFile ~/.ssh/id_ecdsa-spark-e
+    IdentitiesOnly yes
 
 Host blackmesa blackmesa.homelab.kubernerdes.com
     HostName 10.10.12.247
@@ -25,6 +35,11 @@ Host wall-e wall-e.homelab.kubernerdes.com
 
 Host nuc-00 nuc-00.homelab.kubernerdes.com
     HostName 10.10.12.10
+    User mansible
+    IdentityFile ~/.ssh/id_ecdsa-kubernerdes
+
+Host nuc-00-02 nuc-00-02.homelab.kubernerdes.com
+    HostName 10.10.12.9
     User mansible
     IdentityFile ~/.ssh/id_ecdsa-kubernerdes
 
